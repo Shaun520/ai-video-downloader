@@ -19,7 +19,7 @@ function isHttpUrl(u: string): boolean {
 
 /** POST /api/download — 服务端下载（流式回传文件；一次请求完成，不落库存档） */
 export async function POST(request: Request) {
-  let body: { url?: string; format_id?: string };
+  let body: { url?: string; format_id?: string; audio?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -31,6 +31,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请提供有效的视频链接" }, { status: 400 });
   }
 
+  // 音频模式：format_id 为 "mp3" 或显式 audio=true 时，仅提取音频并转 mp3
+  const isAudio = body.audio === true || format_id === "mp3";
+
   // 幂等去重：以 removePrefix 形式兼容 yt-dlp 重名覆盖
   const downloader = new VideoDownloader(DOWNLOAD_DIR);
 
@@ -39,11 +42,11 @@ export async function POST(request: Request) {
     let filename = "";
     if (isDouyinUrl(url)) {
       const parser = new DouyinParser(DOWNLOAD_DIR);
-      const result = await parser.download(url.trim(), format_id === "mp3" ? "audio" : "video");
+      const result = await parser.download(url.trim(), isAudio ? "audio" : "video");
       filepath = result.filepath;
       filename = result.filename;
     } else {
-      const result = await downloader.downloadVideo(url.trim(), format_id || "best");
+      const result = await downloader.downloadVideo(url.trim(), format_id || "best", { audio: isAudio });
       filepath = result.filepath;
       filename = result.filename;
     }

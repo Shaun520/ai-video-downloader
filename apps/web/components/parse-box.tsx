@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { VideoInfo } from "@saveany/shared";
 import { formatDuration, formatCount, platformName } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { DownloadIcon, LinkIcon, SpinnerIcon } from "./icons";
+import { DownloadIcon, LinkIcon, SparklesIcon, SpinnerIcon } from "./icons";
 
 /** 解析 API 调用 */
 export async function parseApi(url: string): Promise<VideoInfo> {
@@ -145,10 +145,12 @@ interface VideoResultCardProps {
   video: VideoInfo;
   downloading: boolean;
   onDownload: (formatId: string) => void;
+  onSummarize?: () => void;
+  aiOpened?: boolean;
 }
 
-/** 视频信息卡片 + 格式选择 + 下载 */
-export function VideoResultCard({ video, downloading, onDownload }: VideoResultCardProps) {
+/** 视频信息卡片 + 格式选择 + 下载 + AI 总结入口 */
+export function VideoResultCard({ video, downloading, onDownload, onSummarize, aiOpened }: VideoResultCardProps) {
   const [selected, setSelected] = useState(video.formats?.[0]?.formatId || "");
 
   const thumbnail = video.thumbnail
@@ -156,6 +158,33 @@ export function VideoResultCard({ video, downloading, onDownload }: VideoResultC
     : "";
 
   const selectedFmt = video.formats?.find((f) => f.formatId === selected);
+
+  /** MP3 音频选项（固定在格式列表第三位；格式少于 3 个时自动落到最后） */
+  const mp3Button = (
+    <button
+      type="button"
+      onClick={() => setSelected("mp3")}
+      className={cn(
+        "flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition-colors",
+        selected === "mp3"
+          ? "border-primary bg-primary-light"
+          : "border-border-light hover:border-primary/40 hover:bg-zinc-50"
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs font-medium",
+          selected === "mp3" ? "bg-primary text-white" : "bg-zinc-100 text-text-muted"
+        )}
+      >
+        MP3
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-text-primary">MP3 音频（320kbps）</span>
+        <span className="block text-xs text-text-muted">MP3 · 仅音频</span>
+      </span>
+    </button>
+  );
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
@@ -206,8 +235,10 @@ export function VideoResultCard({ video, downloading, onDownload }: VideoResultC
         <div className="border-t border-border-light px-5 py-5 sm:px-6">
           <h4 className="mb-3 text-sm font-medium text-text-primary">选择清晰度和格式</h4>
           <div className="grid grid-cols-1 gap-2">
-            {video.formats.map((fmt) => (
-              <button
+            {video.formats.map((fmt, i) => (
+              <Fragment key={fmt.formatId}>
+                {i === 2 ? mp3Button : null}
+                <button
                 key={fmt.formatId}
                 type="button"
                 onClick={() => setSelected(fmt.formatId)}
@@ -233,30 +264,46 @@ export function VideoResultCard({ video, downloading, onDownload }: VideoResultC
                   </span>
                 </span>
               </button>
+              </Fragment>
             ))}
+            {video.formats.length <= 2 ? mp3Button : null}
           </div>
 
           <div className="mt-5 flex flex-col items-stretch gap-2">
-            <button
-              type="button"
-              onClick={() => selected && onDownload(selected)}
-              disabled={!selected || downloading}
-              className="inline-flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-full bg-primary px-8 text-[15px] font-medium text-white shadow-md transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {downloading ? (
-                <>
-                  <SpinnerIcon className="h-5 w-5" />
-                  下载中，请稍候...
-                </>
-              ) : (
-                <>
-                  <DownloadIcon className="h-5 w-5" />
-                  立即下载
-                </>
-              )}
-            </button>
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:gap-3">
+              <button
+                type="button"
+                onClick={() => selected && onDownload(selected)}
+                disabled={!selected || downloading}
+                className="inline-flex h-12 w-full flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-primary px-8 text-[15px] font-medium text-white shadow-md transition-colors hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {downloading ? (
+                  <>
+                    <SpinnerIcon className="h-5 w-5" />
+                    下载中，请稍候...
+                  </>
+                ) : (
+                  <>
+                    <DownloadIcon className="h-5 w-5" />
+                    立即下载
+                  </>
+                )}
+              </button>
+              {onSummarize ? (
+                <button
+                  type="button"
+                  onClick={onSummarize}
+                  className="inline-flex h-12 w-full flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-2 border-primary bg-white px-6 text-[15px] font-medium text-primary transition-colors hover:bg-primary-light"
+                >
+                  <SparklesIcon className="h-5 w-5" />
+                  {aiOpened ? "重新生成 AI 总结" : "AI 总结"}
+                </button>
+              ) : null}
+            </div>
             {selectedFmt ? (
               <span className="text-center text-xs text-text-muted">已选择：{selectedFmt.label}</span>
+            ) : selected === "mp3" ? (
+              <span className="text-center text-xs text-text-muted">已选择：MP3 音频（320kbps）</span>
             ) : null}
           </div>
         </div>

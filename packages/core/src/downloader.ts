@@ -199,9 +199,14 @@ export class VideoDownloader {
     return results.slice(0, 15);
   }
 
-  /** 服务端下载视频，返回落盘路径 */
-  async downloadVideo(url: string, formatId: string): Promise<{ filepath: string; filename: string; title: string; ext: string }> {
-    let fmt = formatId;
+  /** 服务端下载视频（audio=true 时仅提取音频并转 mp3），返回落盘路径 */
+  async downloadVideo(
+    url: string,
+    formatId: string,
+    opts: { audio?: boolean } = {}
+  ): Promise<{ filepath: string; filename: string; title: string; ext: string }> {
+    const isAudio = !!opts.audio;
+    let fmt = isAudio ? "bestaudio/best" : formatId;
     if (!this.ffmpegAvailable && fmt.includes("+")) fmt = "best";
 
     const args = [
@@ -210,7 +215,10 @@ export class VideoDownloader {
       "--output", path.join(this.downloadDir, "%(title)s.%(ext)s"),
       "--paths", this.downloadDir,
       "--print", "after_move:filepath",
-      ...(this.ffmpegAvailable ? ["--merge-output-format", "mp4"] : []),
+      ...(isAudio
+        ? ["--extract-audio", "--audio-format", "mp3", "--audio-quality", "0"]
+        : []),
+      ...(this.ffmpegAvailable && !isAudio ? ["--merge-output-format", "mp4"] : []),
       url,
     ];
     const stdout = await runYtDlp(args, { timeoutMs: 600_000 });

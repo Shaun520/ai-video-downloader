@@ -36,14 +36,21 @@ export function HomeWorkspace() {
   const [video, setVideo] = useState<VideoInfo | null>(null);
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
+  const [aiOpened, setAiOpened] = useState(false);
   const [summaryKey, setSummaryKey] = useState(0);
   const resultRef = useRef<HTMLDivElement | null>(null);
 
   const handleParsed = useCallback((info: VideoInfo) => {
     setVideo(info);
     setUrl(info.url);
-    setSummaryKey((k) => k + 1);
+    setAiOpened(false);
+    setSummaryKey(0);
     requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
+
+  const handleOpenAi = useCallback(() => {
+    setAiOpened(true);
+    setSummaryKey((k) => k + 1);
   }, []);
 
   const handleDownload = useCallback(
@@ -52,10 +59,11 @@ export function HomeWorkspace() {
       setDownloading(true);
       setError("");
       const selectedFmt = video?.formats?.find((f) => f.formatId === formatId);
+      const isAudio = formatId === "mp3";
       try {
-        // 1. 优先尝试直链（仅适用于"完整单文件"格式，如抖音无水印/单格式 MP4）
+        // 1. 优先尝试直链（仅适用于"完整单文件"格式，如抖音无水印/单格式 MP4；音频无直链方案，跳过）
         let directUrl = selectedFmt?.url || "";
-        if (!directUrl && !formatId.includes("+")) {
+        if (!isAudio && !directUrl && !formatId.includes("+")) {
           try {
             const direct = await directUrlApi(url, formatId);
             directUrl = direct.directUrl;
@@ -63,15 +71,15 @@ export function HomeWorkspace() {
             // 直链不可用 → 走服务端下载
           }
         }
-        if (directUrl && !formatId.includes("+")) {
+        if (!isAudio && directUrl && !formatId.includes("+")) {
           const saved = await forceSaveFile(directUrl, `video.${selectedFmt?.ext || "mp4"}`);
           if (saved) return;
         }
-        // 2. 服务端中转下载：合并音视频（+ 格式）或直链跨域受限时兜底
+        // 2. 服务端中转下载：合并音视频（+ 格式）、音频提取（mp3）或直链跨域受限时兜底
         const res = await fetch("/api/download", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, format_id: formatId }),
+          body: JSON.stringify({ url, format_id: formatId, ...(isAudio ? { audio: true } : {}) }),
         });
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -82,7 +90,9 @@ export function HomeWorkspace() {
         const match = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
         const filename = match
           ? decodeURIComponent(match[1])
-          : `video.${selectedFmt?.ext || "mp4"}`;
+          : isAudio
+            ? "audio.mp3"
+            : `video.${selectedFmt?.ext || "mp4"}`;
         const objectUrl = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = objectUrl;
@@ -146,22 +156,26 @@ export function HomeWorkspace() {
       {video ? (
         <section ref={resultRef} className="bg-bg-main py-8 sm:py-10">
           <div className="mx-auto max-w-7xl px-4 sm:px-6">
-            <div className="flex flex-col gap-6 lg:flex-row">
-              <div className="w-full lg:w-2/5 lg:flex-shrink-0">
+            <div className={aiOpened ? "flex flex-col gap-6 lg:flex-row" : "mx-auto max-w-3xl"}>
+              <div className={aiOpened ? "w-full lg:w-2/5 lg:flex-shrink-0" : "w-full"}>
                 <VideoResultCard
                   video={video}
                   downloading={downloading}
                   onDownload={handleDownload}
+                  onSummarize={handleOpenAi}
+                  aiOpened={aiOpened}
                 />
               </div>
-              <div className="min-w-0 flex-1">
-                <SummaryPanel
-                  url={url}
-                  videoTitle={video.title}
-                  triggerKey={summaryKey}
-                  needLogin={() => router.push("/login?next=/")}
-                />
-              </div>
+              {aiOpened ? (
+                <div className="min-w-0 flex-1">
+                  <SummaryPanel
+                    url={url}
+                    videoTitle={video.title}
+                    triggerKey={summaryKey}
+                    needLogin={() => router.push("/login?next=/")}
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
         </section>

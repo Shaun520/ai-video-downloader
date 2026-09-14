@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { VideoFormat, VideoInfo } from "@saveany/shared";
-import { DEFAULT_HEADERS, MOBILE_HEADERS, formatDuration, requestWithRetry, sleep } from "./utils.js";
+import { DEFAULT_HEADERS, MOBILE_HEADERS, formatDuration, sleep } from "./utils.js";
 
 const URL_PATTERN = /https?:\/\/[^\s]+/i;
 
@@ -31,8 +31,17 @@ class CookieJar {
     this.cookies.set(name, value);
   }
 
+  has() {
+    return this.cookies.size > 0;
+  }
+
   header(): string {
     return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+  }
+
+  /** 指纹：用于判断请求后 cookie 是否有变化 */
+  fingerprint(): string {
+    return JSON.stringify([...this.cookies.entries()].sort(([a], [b]) => (a < b ? -1 : 1)));
   }
 }
 
@@ -65,19 +74,28 @@ export class DouyinParser {
 
   /** 解析视频信息 */
   async parse(url: string): Promise<VideoInfo> {
+    const { item, videoId } = await this.resolveItem(url);
+    return this.buildResult(item, videoId);
+  }
+
+  /** 获取原始 item 数据（供字幕等扩展使用） */
+  async fetchItem(url: string): Promise<AwemeItem> {
+    const { item } = await this.resolveItem(url);
+    return item;
+  }
+
+  /** 公共链路：提取链接 → 重定向 → 视频 ID → 元数据 */
+  private async resolveItem(url: string): Promise<{ item: AwemeItem; videoId: string }> {
     const shareUrl = this.extractUrl(url);
     const resolvedUrl = await this.resolveRedirect(shareUrl);
     const videoId = this.extractVideoId(resolvedUrl);
     const item = await this.fetchItemInfo(videoId, resolvedUrl);
-    return this.buildResult(item, videoId);
+    return { item, videoId };
   }
 
   /** 下载视频/音频到本地，返回文件路径 */
   async download(url: string, mode: PlayMode = "video"): Promise<{ filepath: string; filename: string; title: string; ext: string }> {
-    const shareUrl = this.extractUrl(url);
-    const resolvedUrl = await this.resolveRedirect(shareUrl);
-    const videoId = this.extractVideoId(resolvedUrl);
-    const item = await this.fetchItemInfo(videoId, resolvedUrl);
+    const { item, videoId } = await this.resolveItem(url);
     const mediaUrl = this.getMediaUrl(item, mode);
     const title = item.desc || `douyin_${videoId}`;
 
@@ -102,16 +120,62 @@ export class DouyinParser {
     return match[0].trim().replace(/^["']|["']$/g, "").replace(/[).,;!?]+$/, "");
   }
 
+  /** 统一请求：自动携带 cookie 并收集响应中的 set-cookie（模拟 requests.Session） */
+  private async request(
+    url: string,
+    headers: Record<string, string> = {},
+    redirect: "follow" | "manual" = "manual"
+  ): Promise<Response> {
+    const cookie = this.jar.header();
+    const resp = await fetch(url, {
+      headers: cookie ? { ...headers, Cookie: cookie } : headers,
+      redirect,
+      signal: AbortSignal.timeout(30_000),
+    });
+    this.collectCookies(resp);
+    return resp;
+  }
+
+  /** 收集 set-cookie（ttwid / __ac_nonce 等访客 cookie 是分享页返回数据的关键） */
+  private collectCookies(resp: Response): void {
+    let setCookies: string[] = [];
+    try {
+      const list = (resp.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.();
+      if (list && list.length) setCookies = list;
+    } catch {
+      /* ignore */
+    }
+    if (!setCookies.length) {
+      const raw = resp.headers.get("set-cookie");
+      if (raw) setCookies = [raw];
+    }
+    for (const sc of setCookies) {
+      const pair = sc.split(";")[0] ?? "";
+      const eq = pair.indexOf("=");
+      if (eq > 0) {
+        const name = pair.slice(0, eq).trim();
+        const value = pair.slice(eq + 1).trim();
+        if (name && value !== "deleted") this.jar.set(name, value);
+      }
+    }
+  }
+
   private async resolveRedirect(shareUrl: string): Promise<string> {
     let lastErr: unknown;
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
-        const resp = await fetch(shareUrl, {
-          headers: DEFAULT_HEADERS,
-          redirect: "follow",
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        return resp.url;
+        let current = shareUrl;
+        for (let hop = 0; hop < 8; hop++) {
+          const resp = await this.request(current, DEFAULT_HEADERS, "manual");
+          const location = resp.headers.get("location");
+          if (resp.status >= 300 && resp.status < 400 && location) {
+            current = new URL(location, resp.url).href;
+            continue;
+          }
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          return resp.url;
+        }
+        throw new Error("重定向次数过多");
       } catch (e) {
         lastErr = e;
         if (attempt < this.maxRetries - 1) await sleep(1000 * 2 ** attempt);
@@ -157,12 +221,10 @@ export class DouyinParser {
     let lastErr: unknown;
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
-        const resp = await requestWithRetry(`${this.apiUrl}?${params}`, {
-          headers: { ...DEFAULT_HEADERS, Cookie: this.jar.header() },
-          timeoutMs: 30000,
-        });
-        const data = (await resp.json()) as { item_list?: AwemeItem[] };
-        const items = data.item_list || [];
+        const resp = await this.request(`${this.apiUrl}?${params}`, DEFAULT_HEADERS);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = (await resp.json().catch(() => null)) as { item_list?: AwemeItem[] } | null;
+        const items = data?.item_list || [];
         if (items.length) return items[0];
         throw new Error("API 返回空数据");
       } catch (e) {
@@ -179,14 +241,30 @@ export class DouyinParser {
       ? resolvedUrl
       : `https://www.iesdouyin.com/share/video/${videoId}/`;
 
-    const resp = await fetch(shareUrl, { headers: { ...MOBILE_HEADERS, Cookie: this.jar.header() } });
-    if (!resp.ok) throw new Error(`分享页请求失败: HTTP ${resp.status}`);
-    let html = await resp.text();
+    let lastCookie = "";
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const resp = await this.request(shareUrl, MOBILE_HEADERS);
+      if (resp.ok) {
+        let html = await resp.text();
+        if (html.includes("Please wait...") && html.includes("wci=") && html.includes("cs=")) {
+          html = await this.solveWafAndRetry(html, shareUrl);
+        }
+        const item = this.extractItemFromHtml(html);
+        if (item) return item;
+      }
 
-    if (html.includes("Please wait...") && html.includes("wci=") && html.includes("cs=")) {
-      html = await this.solveWafAndRetry(html, shareUrl);
+      // 无数据：分享页 SSR 需携带 ttwid 访客 cookie 才返回完整数据。
+      // 前几次请求会下发 cookie，带 cookie 重试即可命中带数据的页面。
+      const fp = this.jar.fingerprint();
+      if (fp === lastCookie) break; // cookie 不再变化，重试无益
+      lastCookie = fp;
+      await sleep(300 * (attempt + 1));
     }
+    throw new Error("未找到视频信息");
+  }
 
+  /** 从分享页 HTML 中提取视频数据（loaderData[*].videoInfoRes.item_list[0]） */
+  private extractItemFromHtml(html: string): AwemeItem | null {
     const routerData = this.extractRouterData(html);
     const loaderData = routerData.loaderData || {};
     for (const node of Object.values(loaderData) as Record<string, unknown>[]) {
@@ -194,7 +272,7 @@ export class DouyinParser {
       const videoInfoRes = (node as { videoInfoRes?: { item_list?: AwemeItem[] } }).videoInfoRes;
       if (videoInfoRes?.item_list?.length) return videoInfoRes.item_list[0];
     }
-    throw new Error("分享页中未找到视频信息");
+    return null;
   }
 
   /** 解决抖音 WAF 反爬验证（sha256 前缀爆破） */
@@ -225,7 +303,7 @@ export class DouyinParser {
       const domain = new URL(pageUrl).hostname || "www.iesdouyin.com";
       this.jar.set(cookieName, cookieValue);
 
-      const resp = await fetch(pageUrl, { headers: { ...MOBILE_HEADERS, Cookie: this.jar.header() } });
+      const resp = await this.request(pageUrl, MOBILE_HEADERS);
       return resp.ok ? await resp.text() : html;
     } catch {
       return html;

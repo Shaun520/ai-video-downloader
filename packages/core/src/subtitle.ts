@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { runYtDlp } from "./downloader.js";
 import { requestWithRetry, DESKTOP_UA } from "./utils.js";
+import { DouyinParser, isDouyinUrl } from "./douyin.js";
 
 export interface SubtitleSegment {
   start: number;
@@ -79,6 +80,11 @@ export class SubtitleExtractor {
       if (result.hasSubtitle) return result;
     }
 
+    // 抖音：无字幕轨道，走分享页数据源；不调 yt-dlp（其抖音提取器需 Cookie 会报错）
+    if (isDouyinUrl(url)) {
+      return this.extractDouyin(url);
+    }
+
     const info = await this.getVideoInfo(url);
 
     const manualSubs = { ...(info.subtitles || {}) } as Record<string, Array<{ ext?: string; url?: string }>>;
@@ -98,6 +104,22 @@ export class SubtitleExtractor {
       segments,
       fullText: segments.map((s) => s.text).join(" "),
     };
+  }
+
+  /**
+   * 抖音专用字幕提取：走分享页数据源，不调 yt-dlp。
+   * 抖音视频无公开字幕轨道，这里解析一次确认视频可访问后直接返回"无字幕"，
+   * 避免 yt-dlp 抖音提取器因缺少 Cookie 抛出 "Fresh cookies needed" 导致 AI 总结报错。
+   */
+  private async extractDouyin(url: string): Promise<SubtitleResult> {
+    const empty: SubtitleResult = { hasSubtitle: false, language: "", subtitleType: "none", segments: [], fullText: "" };
+    try {
+      const parser = new DouyinParser(/*turbopackIgnore: true*/ path.join(tmpdir(), "saveany-douyin"));
+      await parser.fetchItem(url);
+    } catch {
+      /* 解析失败同样按无字幕降级，不让原始错误冒泡 */
+    }
+    return empty;
   }
 
   /** B 站专用字幕提取 */
