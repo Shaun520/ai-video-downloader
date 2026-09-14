@@ -1,0 +1,29 @@
+# Cloudflare Pages 部署配置 —— SaveAny Web（Next.js）
+# 前置步骤（在 monorepo 根目录执行一次）：
+#   pnpm --filter web add -D @opennextjs/cloudflare
+#   pnpm --filter web exec opennextjs-cloudflare  → 生成 .open-next/
+# 发布：
+#   wrangler pages deploy 或 连接 Git 仓库自动构建
+# 说明：Next.js 的 /api/* 与 SSE 由 Pages Worker（worker）承载；
+#       需要 yt-dlp/ffmpeg 的核心能力由 Cloudflare Containers 的 @saveany/container 提供。
+
+name = "saveany-web"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# OpenNext 产物（由 pnpm --filter web exec opennextjs-cloudflare 生成）
+main = ".open-next/worker.js"
+
+# 构建配置（Pages 面板或 wrangler CI 使用）
+[build]
+command = "pnpm install --no-frozen-lockfile && pnpm --filter @saveany/core build && pnpm --filter web exec opennextjs-cloudflare"
+output_dir = ".open-next"
+
+# 常规变量（敏感密钥请用 wrangler pages secret put 配置）
+[vars]
+NEXT_PUBLIC_SUPABASE_URL = "https://xxx.supabase.co"
+NEXT_PUBLIC_APP_URL = "https://saveany.pages.dev"
+
+# 以下用 Secret 注入（勿写入仓库）：
+# SUPABASE_SERVICE_ROLE_KEY, DEEPSEEK_API_KEY,
+# STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID_MONTHLY, STRIPE_PRICE_ID_YEARLY

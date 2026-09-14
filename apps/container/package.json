@@ -1,0 +1,15 @@
+{
+  "name": "@saveany/container",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "核心容器服务：yt-dlp/抖音解析、直链、字幕（Cloudflare Containers）",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "core:build": "pnpm --filter @saveany/core build"
+  },
+  "dependencies": {
+    "@saveany/core": "workspace:*"
+  }
+}

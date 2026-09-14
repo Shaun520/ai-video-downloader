@@ -1,0 +1,14 @@
+node_modules
+.next
+dist
+.git
+docs
+backend
+frontend
+*.log
+.env*
+!.env.example
+apps/web/.next
+apps/admin/.next
+apps/web/node_modules
+apps/admin/node_modules

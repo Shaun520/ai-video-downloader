@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+
+# Node
+node_modules/
+.npm
+.pnpm-store/
+
+# Monorepo build outputs
+.turbo/
+.next/
+.open-next/
+packages/*/dist/
+apps/*/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 项目临时文件
+backend/downloads/
+backend/logs/
+*.part
+*.log
+
+# 环境变量（本地密钥一律不入库；.env.example 需要入库）
+.env
+.env.local
+.env.*
+!.env.example
+
+# 本地数据库（SQLite）
+backend/data/
+
+# 测试脚本
+backend/test_*.py
+
+# 截图等非代码文件
+*.png

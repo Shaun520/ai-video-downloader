@@ -1,0 +1,20 @@
+# Cloudflare Pages 部署配置 —— SaveAny Admin（Next.js 管理后台）
+# 前置与发布流程同 apps/web（@opennextjs/cloudflare 适配器）。
+#   pnpm --filter admin add -D @opennextjs/cloudflare
+#   pnpm --filter admin exec opennextjs-cloudflare
+
+name = "saveany-admin"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+main = ".open-next/worker.js"
+
+[build]
+command = "pnpm install --no-frozen-lockfile && pnpm --filter admin exec opennextjs-cloudflare"
+output_dir = ".open-next"
+
+[vars]
+NEXT_PUBLIC_SUPABASE_URL = "https://xxx.supabase.co"
+
+# 以下用 Secret 注入（勿写入仓库）：
+# SUPABASE_SERVICE_ROLE_KEY, ADMIN_PASSWORD

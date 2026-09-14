@@ -1,0 +1,229 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-light: #eff6ff;
+  --color-bg-main: #f8fafc;
+  --color-bg-section: #f8fafc;
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94a3b8;
+  --color-border: #e2e8f0;
+  --color-border-light: #f1f5f9;
+  --color-success: #16a34a;
+  --color-danger: #dc2626;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #f8fafc;
+  color: #1e293b;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 视频结果 text min-h 占位，防 CLS */
+.result-slot {
+  min-height: 200px;
+}
+
+/* 细滚动条 */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* focus-visible 全局可见焦点 */
+:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* markmap 容器适配 */
+.markmap-container svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* 总结摘要 Markdown 排版（与原版 free-video-downloader 保持一致） */
+.summary-prose {
+  max-width: none;
+  font-size: 0.875rem;
+  line-height: 1.625;
+  color: var(--color-text-primary);
+}
+.summary-prose > :first-child {
+  margin-top: 0;
+}
+.summary-prose h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--color-text-primary);
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--color-primary-light);
+}
+.summary-prose h2 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--color-text-primary);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.summary-prose h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: var(--color-text-primary);
+}
+.summary-prose p {
+  margin-bottom: 0.75rem;
+  line-height: 1.8;
+  color: var(--color-text-primary);
+}
+.summary-prose ul,
+.summary-prose ol {
+  margin-bottom: 0.75rem;
+  padding-left: 1.5rem;
+}
+.summary-prose li {
+  margin-bottom: 0.35rem;
+  line-height: 1.8;
+}
+.summary-prose li::marker {
+  color: var(--color-primary);
+}
+.summary-prose strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.summary-prose hr {
+  margin: 1.5rem 0;
+  border-color: var(--color-border-light);
+}
+.summary-prose blockquote {
+  border-left: 3px solid var(--color-primary);
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  color: var(--color-text-secondary);
+  font-style: normal;
+  background: var(--color-bg-section);
+  border-radius: 0 8px 8px 0;
+}
+.summary-prose code {
+  background: var(--color-bg-section);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: var(--color-primary-dark);
+  font-weight: 500;
+}
+.summary-prose pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+.summary-prose pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-weight: normal;
+}
+.summary-prose a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+.summary-prose a:hover {
+  text-decoration: underline;
+}
+.summary-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.875rem;
+}
+.summary-prose th {
+  background: var(--color-bg-section);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid var(--color-border);
+}
+.summary-prose td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+/* AI 问答 Markdown 排版（更紧凑，与原版 free-video-downloader 保持一致） */
+.chat-prose p {
+  margin-bottom: 0.5rem;
+  line-height: 1.7;
+}
+.chat-prose p:last-child {
+  margin-bottom: 0;
+}
+.chat-prose ul,
+.chat-prose ol {
+  margin-bottom: 0.5rem;
+  padding-left: 1.25rem;
+}
+.chat-prose li {
+  margin-bottom: 0.2rem;
+  line-height: 1.7;
+}
+.chat-prose li::marker {
+  color: var(--color-primary);
+}
+.chat-prose code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+.chat-prose blockquote {
+  border-left: 2px solid var(--color-primary);
+  padding-left: 0.75rem;
+  color: var(--color-text-secondary);
+  margin: 0.5rem 0;
+}
+.chat-prose strong {
+  font-weight: 600;
+}
+
+/* 尊重减少动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
