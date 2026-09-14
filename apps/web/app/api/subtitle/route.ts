@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractSubtitleWithCache } from "@/lib/subtitle-cache";
-import { SubtitleExtractor, segmentsToFormat, type SubtitleFormat } from "@saveany/core";
+import { getAiSettings, buildExtractor } from "@/lib/ai-config";
+import { segmentsToFormat, type SubtitleFormat } from "@saveany/core";
 
 /**
  * POST /api/subtitle — 提取字幕并导出（srt / vtt / txt）
@@ -29,7 +30,8 @@ export async function POST(request: Request) {
   const fmt = (format === "srt" || format === "vtt" || format === "txt" ? format : "srt") as SubtitleFormat;
 
   try {
-    const extractor = new SubtitleExtractor();
+    const settings = await getAiSettings();
+    const extractor = buildExtractor(settings);
     const sub = await extractSubtitleWithCache(extractor, url.trim());
     if (!sub.hasSubtitle || !sub.segments.length) {
       return NextResponse.json({ error: "未找到可用字幕" }, { status: 404 });

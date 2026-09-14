@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractSubtitleWithCache } from "@/lib/subtitle-cache";
-import { SubtitleExtractor, VideoSummarizer, formatSse } from "@saveany/core";
+import { getAiSettings, buildSummarizer, buildExtractor } from "@/lib/ai-config";
+import { formatSse } from "@saveany/core";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,8 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(formatSse(event, JSON.stringify(data))));
       };
       try {
-        const extractor = new SubtitleExtractor();
+        const settings = await getAiSettings();
+        const extractor = buildExtractor(settings);
         send("status", { message: "正在提取视频字幕…" });
         const sub = await extractSubtitleWithCache(extractor, url.trim());
         if (!sub.hasSubtitle || !sub.segments.length) {
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
           return;
         }
 
-        const summarizer = new VideoSummarizer(process.env.DEEPSEEK_API_KEY!);
+        const summarizer = buildSummarizer(settings);
         send("status", { message: "AI 正在整理思维导图…" });
         const markdown = await summarizer.generateMindmap(sub.fullText, language || "zh");
         send("mindmap", { content: markdown });

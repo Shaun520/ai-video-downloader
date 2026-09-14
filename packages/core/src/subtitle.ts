@@ -74,6 +74,8 @@ function round2(n: number): number {
 }
 
 export class SubtitleExtractor {
+  constructor(private opts: { asrModel?: string } = {}) {}
+
   /** 提取视频字幕 */
   async extract(url: string): Promise<SubtitleResult> {
     if (isBilibiliUrl(url)) {
@@ -122,7 +124,7 @@ export class SubtitleExtractor {
       const parser = new DouyinParser(/*turbopackIgnore: true*/ path.join(tmpdir(), "saveany-douyin"));
       const fileUrl = await parser.getTranscribeUrl(url);
       if (!fileUrl) return empty;
-      const segments = await transcribeAudioFile(fileUrl, apiKey);
+      const segments = await transcribeAudioFile(fileUrl, apiKey, { model: this.opts.asrModel });
       if (!segments.length) return empty; // 纯 BGM 无人声
       return {
         hasSubtitle: true,

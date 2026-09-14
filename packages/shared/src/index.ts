@@ -115,3 +115,29 @@ export const PLATFORM_NAMES: Record<string, string> = {
   douyin: "抖音",
   tiktok: "TikTok",
 };
+
+/** LLM 服务通道：DeepSeek 官方 | 阿里云百炼 DashScope */
+export type LlmProvider = "deepseek" | "dashscope";
+
+/** LLM 配置（视频总结 / 思维导图 / AI 问答共用） */
+export interface LlmConfig {
+  provider: LlmProvider;
+  model: string;
+}
+
+/** ASR 语音转写配置（抖音自动字幕） */
+export interface AsrConfig {
+  model: string;
+}
+
+/** 全站 AI 模型配置 */
+export interface AiModelSettings {
+  llm: LlmConfig;
+  asr: AsrConfig;
+}
+
+/** 默认模型配置（DB 缺失或读取失败时兜底） */
+export const DEFAULT_AI_MODEL_SETTINGS: AiModelSettings = {
+  llm: { provider: "deepseek", model: "deepseek-chat" },
+  asr: { model: "paraformer-v2" },
+};
