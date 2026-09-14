@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { extractSubtitleWithCache } from "@/lib/subtitle-cache";
 import { SubtitleExtractor, VideoSummarizer, formatSse } from "@saveany/core";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
       try {
         const extractor = new SubtitleExtractor();
         send("status", { message: "正在提取视频字幕…" });
-        const sub = await extractor.extract(url.trim());
+        const sub = await extractSubtitleWithCache(extractor, url.trim());
         if (!sub.hasSubtitle || !sub.segments.length) {
           send("error", { message: "未找到可用字幕，无法生成思维导图" });
           controller.close();

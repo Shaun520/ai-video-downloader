@@ -8,6 +8,7 @@ export {
   type YtDlpInfo,
 } from "./downloader.js";
 export { DouyinParser, isDouyinUrl } from "./douyin.js";
+export { transcribeAudioFile, DEFAULT_DASHSCOPE_MODEL } from "./asr.js";
 export {
   SubtitleExtractor,
   parseVttContent,

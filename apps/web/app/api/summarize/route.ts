@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { extractSubtitleWithCache } from "@/lib/subtitle-cache";
 // （临时注释）每日免费次数配额：恢复时取消注释本行 import 与下方配额代码块
 // import { getSupabaseEnv, createAdminClient, checkAndIncrementSummary } from "@saveany/db";
 import { SubtitleExtractor, VideoSummarizer, sseStream, formatSse } from "@saveany/core";
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
       try {
         const extractor = new SubtitleExtractor();
         send("status", { step: "subtitle", message: "正在提取视频字幕…" });
-        const sub = await extractor.extract(url.trim());
+        const sub = await extractSubtitleWithCache(extractor, url.trim());
         if (!sub.hasSubtitle || !sub.segments.length) {
           send("error", { message: "未找到可用字幕，无法进行 AI 总结（该视频可能没有字幕或受版权保护）" });
           controller.close();

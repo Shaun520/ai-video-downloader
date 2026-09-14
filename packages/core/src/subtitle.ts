@@ -8,6 +8,7 @@ import path from "node:path";
 import { runYtDlp } from "./downloader.js";
 import { requestWithRetry, DESKTOP_UA } from "./utils.js";
 import { DouyinParser, isDouyinUrl } from "./douyin.js";
+import { transcribeAudioFile } from "./asr.js";
 
 export interface SubtitleSegment {
   start: number;
@@ -108,18 +109,31 @@ export class SubtitleExtractor {
 
   /**
    * 抖音专用字幕提取：走分享页数据源，不调 yt-dlp。
-   * 抖音视频无公开字幕轨道，这里解析一次确认视频可访问后直接返回"无字幕"，
+   * 抖音无公开字幕轨道，若配置了 DASHSCOPE_API_KEY 则用 paraformer-v2 转写视频语音，
+   * 以转写结果作为"自动字幕"；未配置或转写无语音（纯 BGM）时优雅降级为"无字幕"，
    * 避免 yt-dlp 抖音提取器因缺少 Cookie 抛出 "Fresh cookies needed" 导致 AI 总结报错。
    */
   private async extractDouyin(url: string): Promise<SubtitleResult> {
     const empty: SubtitleResult = { hasSubtitle: false, language: "", subtitleType: "none", segments: [], fullText: "" };
+    const apiKey = process.env.DASHSCOPE_API_KEY;
+    if (!apiKey) return empty; // 未配置 ASR：保持原有"无字幕"降级
+
     try {
       const parser = new DouyinParser(/*turbopackIgnore: true*/ path.join(tmpdir(), "saveany-douyin"));
-      await parser.fetchItem(url);
+      const fileUrl = await parser.getTranscribeUrl(url);
+      if (!fileUrl) return empty;
+      const segments = await transcribeAudioFile(fileUrl, apiKey);
+      if (!segments.length) return empty; // 纯 BGM 无人声
+      return {
+        hasSubtitle: true,
+        language: "zh",
+        subtitleType: "auto",
+        segments,
+        fullText: segments.map((s) => s.text).join(" "),
+      };
     } catch {
-      /* 解析失败同样按无字幕降级，不让原始错误冒泡 */
+      return empty; // 转写失败同样按无字幕降级，不让原始错误冒泡
     }
-    return empty;
   }
 
   /** B 站专用字幕提取 */
