@@ -20,7 +20,12 @@ export function buildSummarizer(settings: AiModelSettings): VideoSummarizer {
   return new VideoSummarizer(llmApiKey ?? "", settings.llm);
 }
 
-/** 构建字幕提取器（注入 ASR 模型） */
+/** 构建字幕提取器（注入 ASR 模型与后端选择；Azure 区域/语种由 admin 可配置） */
 export function buildExtractor(settings: AiModelSettings): SubtitleExtractor {
-  return new SubtitleExtractor({ asrModel: settings.asr.model });
+  return new SubtitleExtractor({
+    asrModel: settings.asr.model,
+    asrProvider: settings.asr.provider,
+    azureRegion: settings.asr.azureRegion,
+    azureLocale: settings.asr.azureLocale,
+  });
 }

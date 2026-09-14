@@ -125,9 +125,19 @@ export interface LlmConfig {
   model: string;
 }
 
-/** ASR 语音转写配置（抖音自动字幕） */
+/** ASR 转写后端：dashscope = 阿里云百炼（国内直链）；azure = Azure 语音（境外区域，海外平台音频直链） */
+export type AsrProvider = "dashscope" | "azure";
+
+/** ASR 语音转写配置 */
 export interface AsrConfig {
+  /** 百炼模型名（如 paraformer-v2），dashscope 后端使用 */
   model: string;
+  /** 转写后端；未配置（auto）时：环境变量有 AZURE_SPEECH_KEY 则用 Azure，否则百炼 */
+  provider?: AsrProvider;
+  /** Azure 区域（如 koreacentral）；缺省回退环境变量 AZURE_SPEECH_REGION */
+  azureRegion?: string;
+  /** Azure 转写语言（zh-CN / en-US 等）；缺省回退 AZURE_SPEECH_LOCALE → en-US */
+  azureLocale?: string;
 }
 
 /** 全站 AI 模型配置 */

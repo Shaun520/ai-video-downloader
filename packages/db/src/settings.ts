@@ -29,6 +29,12 @@ export async function getAppSettings(db: Db): Promise<AiModelSettings> {
     if (typeof llmModel === "string" && llmModel.trim()) settings.llm.model = llmModel.trim();
     const asrModel = rows.find((r) => r.key === "asr.model")?.value;
     if (typeof asrModel === "string" && asrModel.trim()) settings.asr.model = asrModel.trim();
+    const asrProvider = rows.find((r) => r.key === "asr.provider")?.value;
+    if (asrProvider === "dashscope" || asrProvider === "azure") settings.asr.provider = asrProvider;
+    const azureRegion = rows.find((r) => r.key === "asr.azureRegion")?.value;
+    if (typeof azureRegion === "string" && azureRegion.trim()) settings.asr.azureRegion = azureRegion.trim();
+    const azureLocale = rows.find((r) => r.key === "asr.azureLocale")?.value;
+    if (typeof azureLocale === "string" && azureLocale.trim()) settings.asr.azureLocale = azureLocale.trim();
   } catch {
     // 读取失败时保持默认值
   }

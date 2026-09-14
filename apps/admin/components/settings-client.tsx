@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { AiModelSettings, LlmProvider } from "@saveany/shared";
+import type { AiModelSettings, AsrProvider, LlmProvider } from "@saveany/shared";
 import { cn } from "@/lib/utils";
 import { SpinnerIcon } from "@/lib/icons";
 
@@ -17,10 +17,22 @@ const MODEL_PRESETS: Record<LlmProvider, string[]> = {
 
 const ASR_MODELS = ["paraformer-v2", "paraformer-v1"];
 
+/** ASR 后端：auto = 自动（环境变量有 AZURE_SPEECH_KEY 走 Azure，否则百炼） */
+type AsrMode = "auto" | AsrProvider;
+
+const ASR_PROVIDER_OPTIONS: { value: AsrMode; label: string; hint: string }[] = [
+  { value: "auto", label: "自动", hint: "按部署环境自动选择" },
+  { value: "dashscope", label: "阿里云百炼", hint: "国内直链（抖音等）" },
+  { value: "azure", label: "Azure 语音", hint: "境外区域（TikTok/YouTube）" },
+];
+
 export function SettingsClient({ initial }: { initial: AiModelSettings }) {
   const [provider, setProvider] = useState<LlmProvider>(initial.llm.provider);
   const [model, setModel] = useState(initial.llm.model);
   const [asrModel, setAsrModel] = useState(initial.asr.model);
+  const [asrMode, setAsrMode] = useState<AsrMode>(initial.asr.provider ?? "auto");
+  const [azureRegion, setAzureRegion] = useState(initial.asr.azureRegion ?? "koreacentral");
+  const [azureLocale, setAzureLocale] = useState(initial.asr.azureLocale ?? "zh-CN");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -32,10 +44,21 @@ export function SettingsClient({ initial }: { initial: AiModelSettings }) {
     try {
       if (!model.trim()) throw new Error("LLM 模型名不能为空");
       if (!asrModel.trim()) throw new Error("ASR 模型名不能为空");
+      if (!azureRegion.trim()) throw new Error("Azure 区域不能为空");
+      if (!azureLocale.trim()) throw new Error("Azure 语种不能为空");
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ llm: { provider, model: model.trim() }, asr: { model: asrModel.trim() } }),
+        body: JSON.stringify({
+          llm: { provider, model: model.trim() },
+          asr: {
+            model: asrModel.trim(),
+            // auto 不落库：读取时回退"自动"语义
+            ...(asrMode === "auto" ? {} : { provider: asrMode }),
+            azureRegion: azureRegion.trim(),
+            azureLocale: azureLocale.trim(),
+          },
+        }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(json.error || "保存失败");
@@ -49,6 +72,8 @@ export function SettingsClient({ initial }: { initial: AiModelSettings }) {
   }
 
   const activeKeyHint = PROVIDER_OPTIONS.find((p) => p.value === provider)?.keyHint;
+  const showDashscopeModel = asrMode !== "azure";
+  const showAzureFields = asrMode !== "dashscope";
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -128,32 +153,91 @@ export function SettingsClient({ initial }: { initial: AiModelSettings }) {
         </div>
       </section>
 
-      {/* ASR 转写模型 */}
+      {/* ASR 语音转写 */}
       <section className="rounded-xl border border-border bg-white p-5 shadow-sm">
-        <h2 className="text-[15px] font-semibold text-text-primary">ASR 语音转写模型</h2>
-        <p className="mt-1 text-xs text-text-muted">用于抖音等无字幕视频的自动字幕（阿里云百炼）</p>
-
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {ASR_MODELS.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setAsrModel(m)}
-              aria-pressed={asrModel === m}
-              className={cn(
-                "h-11 rounded-lg border border-border font-mono text-[13px] text-text-secondary transition-colors",
-                asrModel === m
-                  ? "border-primary bg-primary-light text-primary"
-                  : "hover:bg-border-light"
-              )}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
-        <p className="mt-1.5 text-xs text-text-muted">
-          对应 API Key 环境变量：<span className="font-mono">DASHSCOPE_API_KEY</span>
+        <h2 className="text-[15px] font-semibold text-text-primary">ASR 语音转写</h2>
+        <p className="mt-1 text-xs text-text-muted">
+          用于无字幕视频的自动字幕（如抖音、TikTok）。国内直链走百炼，海外平台音频直链走 Azure 语音
         </p>
+
+        <div className="mt-4">
+          <p className="mb-1.5 text-[13px] font-medium text-text-secondary">转写后端</p>
+          <div className="grid grid-cols-3 gap-2">
+            {ASR_PROVIDER_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setAsrMode(opt.value)}
+                aria-pressed={asrMode === opt.value}
+                className={cn(
+                  "h-11 rounded-lg border border-border text-[13px] text-text-secondary transition-colors",
+                  asrMode === opt.value
+                    ? "border-primary bg-primary-light text-primary"
+                    : "hover:bg-border-light"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-text-muted">
+            {ASR_PROVIDER_OPTIONS.find((o) => o.value === asrMode)?.hint}，且 Key 均来自环境变量
+            （<span className="font-mono">DASHSCOPE_API_KEY</span> / <span className="font-mono">AZURE_SPEECH_KEY</span>）
+          </p>
+        </div>
+
+        {showDashscopeModel && (
+          <div className="mt-4">
+            <p className="mb-1.5 text-[13px] font-medium text-text-secondary">百炼模型</p>
+            <div className="grid grid-cols-2 gap-2">
+              {ASR_MODELS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setAsrModel(m)}
+                  aria-pressed={asrModel === m}
+                  className={cn(
+                    "h-11 rounded-lg border border-border font-mono text-[13px] text-text-secondary transition-colors",
+                    asrModel === m
+                      ? "border-primary bg-primary-light text-primary"
+                      : "hover:bg-border-light"
+                  )}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {showAzureFields && (
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="asr-azure-region" className="mb-1.5 block text-[13px] font-medium text-text-secondary">
+                Azure 区域
+              </label>
+              <input
+                id="asr-azure-region"
+                value={azureRegion}
+                onChange={(e) => setAzureRegion(e.target.value)}
+                placeholder="如 koreacentral / eastus / southeastasia"
+                className="h-10 w-full rounded-lg border border-border bg-white px-3 font-mono text-[13px] text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <div>
+              <label htmlFor="asr-azure-locale" className="mb-1.5 block text-[13px] font-medium text-text-secondary">
+                Azure 语种
+              </label>
+              <input
+                id="asr-azure-locale"
+                value={azureLocale}
+                onChange={(e) => setAzureLocale(e.target.value)}
+                placeholder="如 zh-CN / en-US"
+                className="h-10 w-full rounded-lg border border-border bg-white px-3 font-mono text-[13px] text-text-primary placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="flex justify-end">
