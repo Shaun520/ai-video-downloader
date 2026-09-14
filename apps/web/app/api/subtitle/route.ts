@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractSubtitleWithCache } from "@/lib/subtitle-cache";
 import { getAiSettings, buildExtractor } from "@/lib/ai-config";
-import { segmentsToFormat, type SubtitleFormat } from "@saveany/core";
+import { segmentsToFormat, friendlyYtDlpError, type SubtitleFormat } from "@saveany/core";
 
 /**
  * POST /api/subtitle — 提取字幕并导出（srt / vtt / txt）
@@ -34,7 +34,10 @@ export async function POST(request: Request) {
     const extractor = buildExtractor(settings);
     const sub = await extractSubtitleWithCache(extractor, url.trim());
     if (!sub.hasSubtitle || !sub.segments.length) {
-      return NextResponse.json({ error: "未找到可用字幕" }, { status: 404 });
+      const reason =
+        (sub as { error?: string }).error ||
+        "未检测到可用的字幕或语音内容：视频可能没有语音（纯音乐/无人声），或平台未提供字幕且语音转写不可用。";
+      return NextResponse.json({ error: reason }, { status: 404 });
     }
     return NextResponse.json({
       data: {
@@ -45,7 +48,8 @@ export async function POST(request: Request) {
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "字幕提取失败";
+    const message = friendlyYtDlpError(err);
+    console.error("subtitle", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

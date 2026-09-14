@@ -56,7 +56,9 @@ export async function POST(request: NextRequest) {
         send("status", { step: "subtitle", message: "正在提取视频字幕…" });
         const sub = await extractSubtitleWithCache(extractor, url.trim());
         if (!sub.hasSubtitle || !sub.segments.length) {
-          send("error", { message: "未找到可用字幕，无法进行 AI 总结（该视频可能没有字幕或受版权保护）" });
+          const reason =
+            sub.error || "未检测到可用的字幕或语音内容：视频可能没有语音（纯音乐/无人声），或平台未提供字幕且语音转写不可用。";
+          send("error", { message: `无法进行 AI 总结：${reason}` });
           controller.close();
           return;
         }

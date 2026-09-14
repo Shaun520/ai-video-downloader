@@ -6,11 +6,12 @@
 # 接口：GET /health   POST /parse | /direct-url | /subtitle
 
 FROM node:22-slim AS base
-# 运行时依赖：ffmpeg（音视频合并）+ python3/pip + yt-dlp
+# 运行时依赖：ffmpeg（音视频合并）+ python3/pip + yt-dlp（[default] 自带 curl_cffi，
+# 提供浏览器指纹伪装，TikTok 等平台的提取器依赖它才能通过反爬壳校验）
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip \
   && rm -rf /var/lib/apt/lists/* \
-  && pip3 install --no-cache-dir --break-system-packages -U yt-dlp \
+  && pip3 install --no-cache-dir --break-system-packages -U "yt-dlp[default]" \
   && yt-dlp --version
 WORKDIR /app
 

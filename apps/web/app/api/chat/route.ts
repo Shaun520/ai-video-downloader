@@ -46,7 +46,8 @@ export async function POST(request: NextRequest) {
         send("status", { message: "正在提取视频字幕…" });
         const sub = await extractSubtitleWithCache(extractor, url.trim());
         if (!sub.hasSubtitle || !sub.segments.length) {
-          send("error", { message: "未找到可用字幕，无法回答问题" });
+          const reason = sub.error || "视频可能没有语音（纯音乐/无人声），或平台未提供字幕且语音转写不可用。";
+          send("error", { message: `无法回答问题：${reason}` });
           controller.close();
           return;
         }

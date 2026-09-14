@@ -4,6 +4,7 @@
  * 正缓存（有字幕）7 天有效，负缓存（无字幕）1 天有效。
  */
 import { createClient } from "@/lib/supabase/server";
+import { CONTAINER_URL, fetchSubtitleFromContainer } from "@/lib/platform-client";
 import { SubtitleExtractor } from "@saveany/core";
 
 export interface CachedSubtitle {
@@ -12,6 +13,8 @@ export interface CachedSubtitle {
   subtitleType: "manual" | "auto" | "none";
   segments: Array<{ start: number; end: number; text: string }>;
   fullText: string;
+  /** 提取失败/不可用时的原因（仅本次请求透传，不写入缓存） */
+  error?: string;
 }
 
 interface CacheRow {
@@ -25,7 +28,8 @@ interface CacheRow {
 }
 
 const POSITIVE_TTL_MS = 7 * 24 * 3600 * 1000; // 有字幕：7 天
-const NEGATIVE_TTL_MS = 24 * 3600 * 1000; // 无字幕：1 天
+// 无字幕：15 分钟（提取失败/瞬时风控多为假阴性，避免锁死用户一整天；真无人声视频重试成本也很低）
+const NEGATIVE_TTL_MS = 15 * 60 * 1000;
 
 /** 读取缓存；命中且未过期返回字幕，否则 null */
 export async function getCachedSubtitle(url: string): Promise<CachedSubtitle | null> {
@@ -70,13 +74,19 @@ export async function saveCachedSubtitle(url: string, sub: CachedSubtitle): Prom
 export async function extractSubtitleWithCache(extractor: SubtitleExtractor, url: string): Promise<CachedSubtitle> {
   const cached = await getCachedSubtitle(url);
   if (cached) return cached;
-  const extracted = await extractor.extract(url);
+
+  // 部署形态：配置了容器则转发（Workers 无子进程，yt-dlp 类平台必须在容器执行）
+  const extracted = CONTAINER_URL
+    ? await fetchSubtitleFromContainer(url)
+    : await extractor.extract(url);
+
   const result: CachedSubtitle = {
     hasSubtitle: extracted.hasSubtitle,
     language: extracted.language,
     subtitleType: extracted.subtitleType,
     segments: extracted.segments,
     fullText: extracted.fullText,
+    error: extracted.error, // 仅透传给本次请求，不写入缓存
   };
   // 缓存写入失败（如表尚未创建）不阻塞主流程，只是本次不缓存
   await saveCachedSubtitle(url, result).catch(() => {});

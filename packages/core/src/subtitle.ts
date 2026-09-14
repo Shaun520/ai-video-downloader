@@ -5,10 +5,10 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runYtDlp } from "./downloader.js";
+import { runYtDlp, type YtDlpInfo } from "./downloader.js";
 import { requestWithRetry, DESKTOP_UA } from "./utils.js";
 import { DouyinParser, isDouyinUrl } from "./douyin.js";
-import { transcribeAudioFile } from "./asr.js";
+import { transcribeAudioFile, transcribeAzureFile, resolveAzureSpeechConfig } from "./asr.js";
 
 export interface SubtitleSegment {
   start: number;
@@ -22,6 +22,8 @@ export interface SubtitleResult {
   subtitleType: "manual" | "auto" | "none";
   segments: SubtitleSegment[];
   fullText: string;
+  /** 无字幕时的具体原因（供上层展示友好提示；不参与缓存） */
+  error?: string;
 }
 
 const PREFERRED_LANGS = ["zh-Hans", "zh", "zh-CN", "en", "ja", "ko"];
@@ -96,7 +98,8 @@ export class SubtitleExtractor {
 
     const picked = this.pickBestSubtitle(manualSubs, autoSubs);
     if (!picked.url) {
-      return { hasSubtitle: false, language: "", subtitleType: "none", segments: [], fullText: "" };
+      // 无字幕轨道（TikTok 等常见）：与抖音同款兜底——配置了 ASR 则用语音转写
+      return this.extractViaAsr(url);
     }
 
     const segments = await this.downloadAndParse(url, picked.language, picked.type);
@@ -135,6 +138,68 @@ export class SubtitleExtractor {
       };
     } catch {
       return empty; // 转写失败同样按无字幕降级，不让原始错误冒泡
+    }
+  }
+
+  /**
+   * 无字幕轨道视频的 ASR 兜底转写（TikTok/YouTube 等，与抖音同款思路）：
+   * yt-dlp 拿音频直链 → 语音转写。转写后端按配置选择——
+   * - 配置了 Azure 语音（AZURE_SPEECH_KEY+REGION）：优先用 Azure（境外区域可拉取
+   *   googlevideo/tiktokcdn 等大陆不可达直链，实测百炼对中国大陆会 FILE_DOWNLOAD_FAILED）
+   * - 未配置 Azure 且配置了 DASHSCOPE_API_KEY：回落百炼（国内可达直链有效）
+   * 均无配置、拿不到直链或无语音（纯 BGM）时优雅降级为"无字幕"。
+   */
+  private async extractViaAsr(url: string): Promise<SubtitleResult> {
+    const empty: SubtitleResult = { hasSubtitle: false, language: "", subtitleType: "none", segments: [], fullText: "" };
+    const azure = resolveAzureSpeechConfig();
+    const dashScopeKey = process.env.DASHSCOPE_API_KEY;
+    if (!azure && !dashScopeKey) return empty; // 未配置任何 ASR：维持"无字幕"降级
+
+    try {
+      const fileUrl = await this.getAudioDirectUrl(url);
+      if (!fileUrl) {
+        return { ...empty, error: "平台未提供音频直链，无法进行语音转写。" };
+      }
+      const segments = azure
+        ? await transcribeAzureFile(fileUrl, azure)
+        : await transcribeAudioFile(fileUrl, dashScopeKey as string, { model: this.opts.asrModel });
+      if (!segments.length) return empty; // 纯 BGM 无人声
+      return {
+        hasSubtitle: true,
+        language: "",
+        subtitleType: "auto",
+        segments,
+        fullText: segments.map((s) => s.text).join(" "),
+      };
+    } catch (err) {
+      console.error("[extractViaAsr]", err instanceof Error ? err.message : err);
+      // 海外平台（尤其 YouTube）的音频直链常对转写服务端的数据中心 IP 限流，
+      // 任务会以"Failed"结束——给出可读原因，避免误导为"视频没有字幕"。
+      return {
+        ...empty,
+        error: "语音转写失败：转写服务无法取到该平台的音频（可能是平台限制数据中心访问）。可稍后重试，或换一个带字幕/手动字幕的视频。",
+      };
+    }
+  }
+
+  /** 通过 yt-dlp 获取该视频的音频直链（供百炼服务端下载转写） */
+  private async getAudioDirectUrl(url: string): Promise<string | null> {
+    try {
+      const args = [
+        "--quiet", "--no-warnings", "--no-playlist",
+        "--skip-download",
+        "--format", "bestaudio/best",
+        "--dump-single-json",
+        url,
+      ];
+      const stdout = await runYtDlp(args, { timeoutMs: 180_000 });
+      const info = JSON.parse(stdout) as YtDlpInfo;
+      if (info.url) return info.url;
+      // 兜底：合并/多段格式时逐条取带 URL 的
+      const req = (info.requested_formats || []).find((f) => f.url);
+      return req?.url || null;
+    } catch {
+      return null;
     }
   }
 

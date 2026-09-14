@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
-import { VideoDownloader } from "@saveany/core";
+import { VideoDownloader, friendlyYtDlpError } from "@saveany/core";
+import { CONTAINER_URL, callContainer } from "@/lib/platform-client";
 
 const DOWNLOAD_DIR = path.join(process.cwd(), "downloads");
 
@@ -29,11 +30,20 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (CONTAINER_URL) {
+      const result = await callContainer<{ directUrl: string; ext: string; filesize: number | null; title: string }>(
+        "/direct-url",
+        { url: url.trim(), format_id: format_id || "best" }
+      );
+      return NextResponse.json({ data: result });
+    }
+
     const downloader = new VideoDownloader(DOWNLOAD_DIR);
     const result = await downloader.getDirectUrl(url.trim(), format_id || "best");
     return NextResponse.json({ data: result });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "获取直链失败";
+    const message = friendlyYtDlpError(err);
+    console.error("direct-url", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

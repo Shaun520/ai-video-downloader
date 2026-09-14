@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
 
-/** GET /api/thumbnail — 缩略图反防盗链代理（防外链 403） */
+/** 解析出站代理：显式 PROXY_URL 优先，其次 HTTPS_PROXY / HTTP_PROXY 环境变量 */
+function resolveOutboundProxy(): string | undefined {
+  const p = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  return p && p.trim() ? p.trim() : undefined;
+}
+
+/** 按目标域生成防盗链 Referer */
+function refererFor(url: string): string {
+  try {
+    return new URL(url).origin + "/";
+  } catch {
+    return "https://www.google.com/";
+  }
+}
+
+/** GET /api/thumbnail — 缩略图反防盗链代理（防外链 403 / 海外 CDN 直连不可达） */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
@@ -19,15 +34,34 @@ export async function GET(request: Request) {
   }
 
   try {
-    const upstream = await fetch(url, {
+    // 本机/容器 Node 环境：配置了代理则经代理拉取（与 yt-dlp 共用 PROXY_URL）。
+    // Cloudflare Worker 环境：默认无代理配置，走 Cloudflare 全球网络，无需代理。
+    const proxy = resolveOutboundProxy();
+    const base: RequestInit = {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        Referer: "https://www.bilibili.com/",
+        Referer: refererFor(url),
         Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
       },
       cache: "no-store",
-    });
+    };
+
+    let upstream: Response;
+    if (proxy) {
+      // 注意：ProxyAgent 必须配 undici 自带的 fetch，全局 fetch 与其不兼容；
+      // undici 的 Response 类型与 Web Response 有细微差异，这里做一次断言。
+      const { ProxyAgent, fetch: proxyFetch } = await import("undici");
+      upstream = (await proxyFetch(url, {
+        method: "GET",
+        headers: base.headers,
+        cache: "no-store",
+        dispatcher: new ProxyAgent(proxy),
+      })) as unknown as Response;
+    } else {
+      upstream = await fetch(url, base);
+    }
+
     if (!upstream.ok) {
       console.error("thumbnail upstream", url, "→", upstream.status);
       return NextResponse.json({ error: "获取缩略图失败" }, { status: 502 });
