@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import path from "node:path";
-import { VideoDownloader, DouyinParser, isDouyinUrl } from "@saveany/core";
+import { VideoDownloader, DouyinParser, isDouyinUrl, friendlyYtDlpError } from "@saveany/core";
+import { CONTAINER_URL } from "@/lib/platform-client";
 
 export const maxDuration = 300;
 
@@ -38,6 +39,33 @@ export async function POST(request: Request) {
   const downloader = new VideoDownloader(DOWNLOAD_DIR);
 
   try {
+    // 部署形态：配置了容器则转发（容器有真实文件系统；Workers 无本地磁盘）
+    if (CONTAINER_URL) {
+      let up: Response;
+      try {
+        up = await fetch(`${CONTAINER_URL}/download`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: url.trim(), format_id: format_id || "best", audio: isAudio }),
+          signal: AbortSignal.timeout(600_000),
+        });
+      } catch {
+        return NextResponse.json({ error: "核心服务（容器）不可达，请检查部署配置" }, { status: 502 });
+      }
+      if (!up.ok) {
+        const payload = (await up.json().catch(() => ({}))) as { error?: string };
+        return NextResponse.json({ error: payload.error || "下载失败" }, { status: up.status });
+      }
+      const filename = decodeURIComponent(up.headers.get("x-saveany-filename") || "video.mp4");
+      return new NextResponse(up.body, {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
     let filepath = "";
     let filename = "";
     if (isDouyinUrl(url)) {
@@ -68,7 +96,8 @@ export async function POST(request: Request) {
       },
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "下载失败";
+    const message = friendlyYtDlpError(err);
+    console.error("download", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

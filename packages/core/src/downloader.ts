@@ -6,7 +6,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { VideoFormat, VideoInfo } from "@saveany/shared";
-import { formatFilesize, sanitizeFilename } from "./utils.js";
+import { formatFilesize, sanitizeFilename, sleep } from "./utils.js";
+
+/** 解析出站代理：显式 PROXY_URL 优先，其次 HTTPS_PROXY / HTTP_PROXY 环境变量 */
+export function resolveOutboundProxy(): string | undefined {
+  const p = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  return p && p.trim() ? p.trim() : undefined;
+}
 
 /** yt-dlp 原始 info 中的 format */
 interface RawFormat {
@@ -46,10 +52,43 @@ export interface YtDlpInfo {
   automatic_captions?: Record<string, unknown[]>;
 }
 
-/** 执行 yt-dlp 并返回完整 stdout */
-export function runYtDlp(args: string[], opts: { timeoutMs?: number } = {}): Promise<string> {
+/** 执行 yt-dlp 并返回完整 stdout；配置了出站代理时自动加 --proxy。
+ *  对 403/5xx/网络抖动等瞬时错误自动重试（TikTok/YouTube 反爬多为此类，重试可恢复）。 */
+export async function runYtDlp(
+  args: string[],
+  opts: { timeoutMs?: number; retries?: number } = {}
+): Promise<string> {
+  const retries = opts.retries ?? 1;
+  let lastErr: Error = new Error("yt-dlp 执行失败");
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) await sleep(3000 * attempt); // 3s / 6s 退避
+    try {
+      return await spawnYtDlpOnce(args, opts);
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (attempt === retries || !isRetryableYtDlpError(lastErr)) throw lastErr;
+    }
+  }
+  throw lastErr;
+}
+
+/** 是否值得重试：瞬时风控(403/429)、5xx、网络中断、网页抓取失败 */
+function isRetryableYtDlpError(err: Error): boolean {
+  const m = err.message.toLowerCase();
+  if (/(\b403\b|\b429\b)/.test(m)) return true;
+  if (/http error 5\d\d/.test(m)) return true;
+  if (/transporterror|connection|timed out|unable to download webpage|econnaborted|econnreset/.test(m)) return true;
+  // 反爬确认类：TikTok/YouTube 的临时挑战与页面异常，重试常可恢复
+  if (/unexpected response from webpage/.test(m)) return true;
+  return false;
+}
+
+function spawnYtDlpOnce(args: string[], opts: { timeoutMs?: number }): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("yt-dlp", args, { windowsHide: true });
+    const proxy = resolveOutboundProxy();
+    const fullArgs = proxy ? ["--proxy", proxy, ...args] : args;
+    const child = spawn("yt-dlp", fullArgs, { windowsHide: true });
     let stdout = "";
     let stderr = "";
     const timer = setTimeout(() => {
@@ -279,4 +318,60 @@ export class VideoDownloader {
       return "video";
     }
   }
+}
+
+/** yt-dlp 错误分类（供上层做友好提示） */
+export type YtDlpErrorKind =
+  | "network" // 连不上目标平台（超时/拒绝/无法下载网页）
+  | "anti_bot" // 平台反爬校验（TikTok 等对数据中心 IP / 无浏览器指纹）
+  | "needs_cookie" // 需要登录 Cookie
+  | "unsupported" // 不支持该链接/平台
+  | "missing" // 环境缺少 yt-dlp / ffmpeg
+  | "timeout" // 我们自设的超时
+  | "unknown";
+
+/** 各错误分类的中文友好提示 */
+export const YTDLP_ERROR_HINTS: Record<YtDlpErrorKind, string> = {
+  network: "无法连接到该视频平台（网络不可达或超时），请确认网络可用后重试。",
+  anti_bot: "该平台风控拦截了本次请求（反爬校验或访问过于频繁）。请稍等 1~2 分钟再试，或更换网络出口节点。",
+  needs_cookie: "该视频需要登录平台账号才能解析，当前暂不支持。",
+  unsupported: "暂不支持此链接或平台，请确认链接是否来自支持的视频平台。",
+  missing: "服务端缺少 yt-dlp / ffmpeg 组件，请检查部署环境。",
+  timeout: "解析超时（视频所在平台响应较慢），请稍后重试。",
+  unknown: "解析失败，请稍后重试。",
+};
+
+/** 根据 yt-dlp 报错文本归类问题类型 */
+export function classifyYtDlpError(err: unknown): YtDlpErrorKind {
+  const lower = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (lower.includes("无法启动 yt-dlp")) return "missing";
+  if (lower.includes("yt-dlp 执行超时")) return "timeout";
+  if (lower.includes("unsupported url") || lower.includes("no video formats") || lower.includes("is not a valid url")) {
+    return "unsupported";
+  }
+  if (lower.includes("fresh cookies") || lower.includes("needs cookie") || lower.includes("cookie")) return "needs_cookie";
+  // 403/429 = 平台风控（TikTok/YouTube 高频访问或地区限制），先于网络类判定
+  if (
+    (lower.includes("403") && (lower.includes("forbidden") || lower.includes("error 403"))) ||
+    lower.includes("429 too many") ||
+    lower.includes("unexpected response from webpage") ||
+    lower.includes("impersonat") ||
+    lower.includes("challenge") ||
+    lower.includes("captcha") ||
+    lower.includes("verify you are human") ||
+    lower.includes("georestricted") ||
+    lower.includes("the page needs to be reloaded")
+  ) {
+    return "anti_bot";
+  }
+  if (lower.includes("http error 404") || lower.includes("http error 410")) return "unsupported";
+  if (lower.includes("timed out") || lower.includes("transporterror") || lower.includes("unable to download webpage") || lower.includes("connection")) {
+    return "network";
+  }
+  return "unknown";
+}
+
+/** 将 yt-dlp 异常转换为一句用户能看懂的中文提示（供各 API 统一使用） */
+export function friendlyYtDlpError(err: unknown): string {
+  return YTDLP_ERROR_HINTS[classifyYtDlpError(err)];
 }

@@ -5,10 +5,15 @@ export {
   VideoDownloader,
   runYtDlp,
   hasFfmpeg,
+  resolveOutboundProxy,
+  classifyYtDlpError,
+  friendlyYtDlpError,
+  YTDLP_ERROR_HINTS,
+  type YtDlpErrorKind,
   type YtDlpInfo,
 } from "./downloader.js";
 export { DouyinParser, isDouyinUrl } from "./douyin.js";
-export { transcribeAudioFile, DEFAULT_DASHSCOPE_MODEL } from "./asr.js";
+export { transcribeAudioFile, transcribeAzureFile, resolveAzureSpeechConfig, DEFAULT_DASHSCOPE_MODEL } from "./asr.js";
 export {
   SubtitleExtractor,
   parseVttContent,

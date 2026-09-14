@@ -36,6 +36,7 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
   const [activeTab, setActiveTab] = useState<TabKey>("summary");
   const [status, setStatus] = useState("");
   const [summary, setSummary] = useState("");
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [mindmap, setMindmap] = useState("");
   const [subtitleInfo, setSubtitleInfo] = useState<SubtitleInfo>({});
   const [subtitleLoaded, setSubtitleLoaded] = useState(false);
@@ -243,6 +244,7 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
     if (!url) return;
     setChatHistory([]);
     setMindmap("");
+    setSummaryExpanded(false);
     setSubtitleInfo({});
     setSubtitleLoaded(false);
     setSubtitleExpanded(false);
@@ -311,7 +313,10 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
             ) : (
               <div>
                 <div
-                  className="summary-prose"
+                  className={cn(
+                    "summary-prose overflow-y-auto",
+                    summaryExpanded ? "max-h-none" : "max-h-[500px]"
+                  )}
                   dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(summary) }}
                 />
                 {status && (
@@ -320,6 +325,13 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
                     AI 正在生成中...
                   </div>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setSummaryExpanded((v) => !v)}
+                  className="mt-2 cursor-pointer text-xs text-primary transition-colors hover:text-primary-dark"
+                >
+                  {summaryExpanded ? "收起" : "展开全部"}
+                </button>
               </div>
             )}
           </div>
