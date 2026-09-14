@@ -8,7 +8,7 @@ import path from "node:path";
 import { runYtDlp, type YtDlpInfo } from "./downloader.js";
 import { requestWithRetry, DESKTOP_UA } from "./utils.js";
 import { DouyinParser, isDouyinUrl } from "./douyin.js";
-import { transcribeAudioFile, transcribeAzureFile, resolveAzureSpeechConfig } from "./asr.js";
+import { transcribeAudioFile, transcribeAzureFile, resolveAzureSpeechConfig, type AzureSpeechConfig } from "./asr.js";
 
 export interface SubtitleSegment {
   start: number;
@@ -76,7 +76,16 @@ function round2(n: number): number {
 }
 
 export class SubtitleExtractor {
-  constructor(private opts: { asrModel?: string } = {}) {}
+  constructor(
+    private opts: {
+      asrModel?: string;
+      /** 后端选择：dashscope / azure / 未设置(自动，按环境变量倾斜)；对应 admin 的 asr.provider */
+      asrProvider?: "dashscope" | "azure";
+      /** Azure 区域/语种覆盖（admin 配置优先于环境变量） */
+      azureRegion?: string;
+      azureLocale?: string;
+    } = {}
+  ) {}
 
   /** 提取视频字幕 */
   async extract(url: string): Promise<SubtitleResult> {
@@ -151,17 +160,26 @@ export class SubtitleExtractor {
    */
   private async extractViaAsr(url: string): Promise<SubtitleResult> {
     const empty: SubtitleResult = { hasSubtitle: false, language: "", subtitleType: "none", segments: [], fullText: "" };
-    const azure = resolveAzureSpeechConfig();
+    const azureEnv = resolveAzureSpeechConfig();
     const dashScopeKey = process.env.DASHSCOPE_API_KEY;
-    if (!azure && !dashScopeKey) return empty; // 未配置任何 ASR：维持"无字幕"降级
+
+    // 后端决策：显式配置优先；自动模式下环境变量有 Azure 则 Azure，否则百炼
+    const provider = this.opts.asrProvider;
+    const useAzure = provider === "azure" ? !!azureEnv : provider === "dashscope" ? false : !!azureEnv;
+    const useDashScope = !useAzure && !!dashScopeKey;
+    if (!useAzure && !useDashScope) return empty; // 未配置任何可用 ASR：维持"无字幕"降级
 
     try {
       const fileUrl = await this.getAudioDirectUrl(url);
       if (!fileUrl) {
         return { ...empty, error: "平台未提供音频直链，无法进行语音转写。" };
       }
-      const segments = azure
-        ? await transcribeAzureFile(fileUrl, azure)
+      const segments = useAzure
+        ? await transcribeAzureFile(fileUrl, {
+            key: (azureEnv as AzureSpeechConfig).key,
+            region: this.opts.azureRegion?.trim() || (azureEnv as AzureSpeechConfig).region,
+            locale: this.opts.azureLocale?.trim() || (azureEnv as AzureSpeechConfig).locale,
+          })
         : await transcribeAudioFile(fileUrl, dashScopeKey as string, { model: this.opts.asrModel });
       if (!segments.length) return empty; // 纯 BGM 无人声
       return {
