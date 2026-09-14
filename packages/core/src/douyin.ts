@@ -84,6 +84,17 @@ export class DouyinParser {
     return item;
   }
 
+  /** 获取可直接转写的视频直链（playwm→play 去水印；供 ASR 使用） */
+  async getTranscribeUrl(url: string): Promise<string | null> {
+    try {
+      const { item } = await this.resolveItem(url);
+      const playUrls = item.video?.play_addr?.url_list || [];
+      return playUrls.length ? playUrls[0].replace("playwm", "play") : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** 公共链路：提取链接 → 重定向 → 视频 ID → 元数据 */
   private async resolveItem(url: string): Promise<{ item: AwemeItem; videoId: string }> {
     const shareUrl = this.extractUrl(url);

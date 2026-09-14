@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { extractSubtitleWithCache } from "@/lib/subtitle-cache";
 import { SubtitleExtractor, segmentsToFormat, type SubtitleFormat } from "@saveany/core";
 
 /**
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
 
   try {
     const extractor = new SubtitleExtractor();
-    const sub = await extractor.extract(url.trim());
+    const sub = await extractSubtitleWithCache(extractor, url.trim());
     if (!sub.hasSubtitle || !sub.segments.length) {
       return NextResponse.json({ error: "未找到可用字幕" }, { status: 404 });
     }

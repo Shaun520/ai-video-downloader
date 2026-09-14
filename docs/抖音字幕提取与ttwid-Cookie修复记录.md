@@ -94,5 +94,22 @@ resp = session.get(share_url)  # 第 2/3/… 次：带上 ttwid 重试 → 命�
 
 ## 7. 遗留问题与后续方向
 
-- 受上述实测限制，AI 总结对抖音视频**无法真正生成**，属平台能力边界；
-- 若未来抖音开放字幕接口，`extractDouyin()` 只需在 `fetchViaSharePage`/详情 API 返回中检测 `video.subtitle` 并解析其 JSON 分段（`{text, start, end}`），结构上已预留分支，无需重构。
+- 抖音公开 Web 数据源均不暴露字幕轨道，须走"语音转写"而非"字幕抓取"路线，见第 8 节。
+
+## 8. 接入落地（2026-09-14）：阿里云百炼 paraformer-v2 语音转写
+
+第 6 节的结论是"抖音无公开字幕轨道"，但这不等于 AI 总结无解——改走 **ASR 转写视频声音** 的路线，已实测并接入：
+
+**实测数据**（用户视频 `7684959632527248683`，46s，转写 7× 实时）：
+- 链路：`DouyinParser.getTranscribeUrl`（分享页 Cookie 重试法拿视频直链，`playwm→play` 去水印）→ 百炼 `paraformer-v2` 异步任务（`POST /api/v1/services/audio/asr/transcription` + 轮询 `GET /api/v1/tasks/{task_id}`）→ `transcription_url` 结果 JSON 解析分段；
+- 耗时：解析约 2s + 转写约 6.5s，端到端 **11.7s**；
+- 输出：9 个句子级分段（毫秒时间戳→秒），中文识别准确（含标点）；
+- 成本：0.00008 元/秒，单条 46s 视频约 0.004 元，**每月 10 小时免费额度**覆盖个人使用。
+
+**代码变更**：
+- 新增 `packages/core/src/asr.ts`：`transcribeAudioFile()`（提交→轮询→拉结果解析，超时 180s 兜底）；
+- `DouyinParser` 新增 `getTranscribeUrl()`；`extractDouyin()` 在有 `DASHSCOPE_API_KEY` 时转写语音并返回 `subtitleType: "auto"` 字幕，未配置/转写无语音（纯 BGM）/失败时一律优雅降级为 `hasSubtitle: false`；
+- 环境变量 `DASHSCOPE_API_KEY`（已写入 `.env.example` / `wrangler.toml` 注释，本地 `.env.local` 已配置）；
+- summarize / chat / mindmap / subtitle 四个入口均走 `extractor.extract()`，**零路由改动自动生效**。
+
+**局限**：转写文本长度受视频时长限制（长视频 → 长文本 → LLM 上下文增多）；纯 BGM 无人声视频转写出空文本，仍走"无字幕"降级提示；`transcription_url` 结果链接 24h 有效，仅会话内使用无持久化需求。
