@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { extractSubtitleWithCache } from "@/lib/subtitle-cache";
+import { getAiSettings, buildSummarizer, buildExtractor } from "@/lib/ai-config";
 // （临时注释）每日免费次数配额：恢复时取消注释本行 import 与下方配额代码块
 // import { getSupabaseEnv, createAdminClient, checkAndIncrementSummary } from "@saveany/db";
-import { SubtitleExtractor, VideoSummarizer, sseStream, formatSse } from "@saveany/core";
+import { sseStream, formatSse } from "@saveany/core";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,8 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(formatSse(event, JSON.stringify(data))));
       };
       try {
-        const extractor = new SubtitleExtractor();
+        const settings = await getAiSettings();
+        const extractor = buildExtractor(settings);
         send("status", { step: "subtitle", message: "正在提取视频字幕…" });
         const sub = await extractSubtitleWithCache(extractor, url.trim());
         if (!sub.hasSubtitle || !sub.segments.length) {
@@ -67,7 +69,7 @@ export async function POST(request: NextRequest) {
           segments: sub.segments,
         });
 
-        const summarizer = new VideoSummarizer(process.env.DEEPSEEK_API_KEY!);
+        const summarizer = buildSummarizer(settings);
         send("status", { step: "summarize", message: "AI 正在生成总结…" });
         let summary = "";
         for await (const chunk of summarizer.summarizeStream(sub.fullText, language || "zh")) {

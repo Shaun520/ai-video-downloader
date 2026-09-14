@@ -5,3 +5,4 @@ export * from "./db-types.js";
 export * from "./users.js";
 export * from "./orders.js";
 export * from "./quota.js";
+export * from "./settings.js";

@@ -1,11 +1,14 @@
 /**
- * summarize.ts — DeepSeek 大模型调用（原生 fetch，流式 SSE）
+ * summarize.ts — LLM 大模型调用（DeepSeek 官方 / 阿里云百炼 DashScope，兼容 OpenAI 协议，流式 SSE）
  * 对应 backend/summarizer.py 的 VideoSummarizer。
  */
 import type { SubtitleSegment } from "./subtitle.js";
+import type { LlmConfig, LlmProvider } from "@saveany/shared";
 
-const DEEPSEEK_BASE = "https://api.deepseek.com/chat/completions";
-const MODEL = "deepseek-chat";
+const BASE_URLS: Record<LlmProvider, string> = {
+  deepseek: "https://api.deepseek.com/chat/completions",
+  dashscope: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+};
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -13,8 +16,8 @@ interface ChatMessage {
 }
 
 export class VideoSummarizer {
-  constructor(private apiKey: string) {
-    if (!apiKey) throw new Error("DEEPSEEK_API_KEY 环境变量未设置");
+  constructor(private apiKey: string, private cfg: LlmConfig) {
+    if (!apiKey) throw new Error("缺少 LLM API Key（DEEPSEEK_API_KEY / DASHSCOPE_API_KEY）");
   }
 
   private async createChatCompletion(messages: ChatMessage[], opts: { stream: true; temperature?: number; maxTokens?: number })
@@ -26,7 +29,7 @@ export class VideoSummarizer {
     opts: { stream: boolean; temperature?: number; maxTokens?: number }
   ): Promise<ReadableStream<Uint8Array> | string> {
     const body = {
-      model: MODEL,
+      model: this.cfg.model,
       messages,
       stream: opts.stream,
       temperature: opts.temperature ?? 0.7,
@@ -36,7 +39,7 @@ export class VideoSummarizer {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 300_000);
     try {
-      const resp = await fetch(DEEPSEEK_BASE, {
+      const resp = await fetch(BASE_URLS[this.cfg.provider], {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

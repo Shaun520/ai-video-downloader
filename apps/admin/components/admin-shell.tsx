@@ -3,18 +3,20 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { DashboardIcon, LogoutIcon, MenuIcon, OrdersIcon, UsersIcon } from "@/lib/icons";
+import { DashboardIcon, LogoutIcon, MenuIcon, ModelIcon, OrdersIcon, UsersIcon } from "@/lib/icons";
 
 const NAV_ITEMS = [
   { href: "/", label: "概览", icon: DashboardIcon, exact: true },
   { href: "/users", label: "用户管理", icon: UsersIcon },
   { href: "/orders", label: "订单管理", icon: OrdersIcon },
+  { href: "/settings", label: "模型配置", icon: ModelIcon },
 ];
 
 const TITLES: Record<string, string> = {
   "/": "概览",
   "/users": "用户管理",
   "/orders": "订单管理",
+  "/settings": "模型配置",
 };
 
 function Brand() {
