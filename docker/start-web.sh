@@ -25,17 +25,8 @@ if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
   if [ -z "$READY" ]; then
     echo "[start] 警告：tailscaled 未就绪，跳过 Tailscale，直连模式启动"
   else
-    # 可选：配置出口节点（你家电脑的 Tailscale IP），公网流量经它再出海
-    # 需要满足：① 家电脑开启 exit node;② Clash 开 TUN/系统代理;③ 管理台批准该节点
-    EXIT_ARGS=
-    if [ -n "${TS_EXIT_NODE:-}" ]; then
-      EXIT_ARGS="--exit-node=$TS_EXIT_NODE --exit-node-allow-lan-access"
-      echo "[start] 使用出口节点：$TS_EXIT_NODE（公网流量经你家电脑出海）"
-    fi
-
     # 后台登录 tailnet（ephemeral 节点）；失败不阻塞业务启动，错误会打印到日志便于诊断
-    # shellcheck disable=SC2086
-    tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname=saveany-web-cloudrun $EXIT_ARGS 2>&1 &
+    tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname=saveany-web-cloudrun 2>&1 &
     TAILSCALE_UP_PID=$!
 
     # 等待节点上线拿到 IP，确保代理目标可达后才设置出站代理
@@ -50,20 +41,43 @@ if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
     done
 
     if [ -n "$UP" ]; then
-      # yt-dlp 等出站代理走本机 tailscale 提供的 SOCKS5，经家庭 Clash 出海
-      export PROXY_URL="socks5://127.0.0.1:1055"
-      export HTTP_PROXY="$PROXY_URL"
-      export HTTPS_PROXY="$PROXY_URL"
-      export ALL_PROXY="$PROXY_URL"
-      echo "[start] PROXY_URL=$PROXY_URL"
-      # 出海自检：确认流量是否真的经出口节点到达公网（非致命，仅诊断）
-      echo "[start] 出海自检开始（最多 ~20s）..."
+      # 方案：直接用你家电脑的 Clash 当上游代理（不依赖出口节点，避免 Windows TUN 不拦截转发流量的坑）
+      # UPSTREAM_PROXY_TAILNET = 你家电脑 Clash 的 tailnet 地址:端口，如 100.64.112.93:7890
+      # 需要你家 Clash 开启「允许局域网 / Allow LAN」
+      if [ -n "${UPSTREAM_PROXY_TAILNET:-}" ]; then
+        CLASH_HOST="${UPSTREAM_PROXY_TAILNET%%:*}"
+        CLASH_PORT="${UPSTREAM_PROXY_TAILNET##*:}"
+        echo "[start] 用 socat 桥接本地 17890 -> Tailscale -> 你家 Clash ${CLASH_HOST}:${CLASH_PORT}"
+        # socat 监听本地 17890，经 Tailscale SOCKS5(127.0.0.1:1055) 转发到你家 Clash
+        socat TCP-LISTEN:17890,fork,reuseaddr \
+          SOCKS5:127.0.0.1:${CLASH_HOST}:${CLASH_PORT},socksport=1055,socks5auth=none &
+        SOCAT_PID=$!
+        sleep 1
+        if kill -0 "$SOCAT_PID" 2>/dev/null; then
+          export PROXY_URL="http://127.0.0.1:17890"
+          export HTTP_PROXY="$PROXY_URL"
+          export HTTPS_PROXY="$PROXY_URL"
+          export ALL_PROXY="$PROXY_URL"
+          echo "[start] PROXY_URL=$PROXY_URL（经你家 Clash 出海）"
+        else
+          echo "[start] ❌ socat 启动失败，回退直连（海外平台不可用）"
+        fi
+      else
+        # 未配置上游代理：仅用 Tailscale SOCKS5（访问 tailnet 内资源；公网直连会被墙）
+        export PROXY_URL="socks5://127.0.0.1:1055"
+        export HTTP_PROXY="$PROXY_URL"
+        export HTTPS_PROXY="$PROXY_URL"
+        export ALL_PROXY="$PROXY_URL"
+        echo "[start] PROXY_URL=$PROXY_URL（未配置 UPSTREAM_PROXY_TAILNET，公网流量走容器直连）"
+      fi
+      # 出海自检：确认流量是否真的经你家 Clash 到达公网（非致命，仅诊断）
+      echo "[start] 出海自检开始（最多 ~15s）..."
       if command -v curl >/dev/null 2>&1; then
         IP=$(curl -sS -m 12 https://api.ipify.org 2>/dev/null || true)
         if [ -n "$IP" ]; then
           echo "[start] ✅ 出海成功，当前公网出口 IP = $IP"
         else
-          echo "[start] ❌ 出海失败：无法从公网获取 IP（请检查家端 Clash TUN / 节点 / 出口节点批准）"
+          echo "[start] ❌ 出海失败：无法从公网获取 IP（请检查家端 Clash Allow LAN / 端口 / 节点）"
         fi
       else
         echo "[start] 容器无 curl，跳过出海自检"

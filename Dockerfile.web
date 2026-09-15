@@ -22,7 +22,7 @@ FROM node:22-slim AS base
 # ffmpeg：音视频合并；python3/pip + yt-dlp[default]：解析/下载
 # （[default] 自带 curl_cffi 浏览器指纹伪装，TikTok 等平台提取器依赖它过反爬壳）
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip \
+  && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip socat \
   && rm -rf /var/lib/apt/lists/* \
   && pip3 install --no-cache-dir --break-system-packages -U "yt-dlp[default]" \
   && yt-dlp --version
