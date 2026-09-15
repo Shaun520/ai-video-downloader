@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, rmSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { VideoDownloader, DouyinParser, isDouyinUrl, friendlyYtDlpError } from "@saveany/core";
@@ -87,7 +87,30 @@ export async function POST(request: Request) {
     const stream = createReadStream(/*turbopackIgnore: true*/ filepath);
     const nodeStream = Readable.toWeb(stream) as ReadableStream<Uint8Array>;
 
-    return new NextResponse(nodeStream, {
+    // 手动搬运管道：视频完整传给客户端后（或客户端中途断开）立即删除服务器上的临时文件，
+    // 避免 downloads 目录残留堆积。直接返回 nodeStream 无法挂"发送完成"回调，故自建转发管道。
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+    const reader = nodeStream.getReader();
+    const writer = writable.getWriter();
+    void (async () => {
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          await writer.write(value);
+        }
+        try {
+          await writer.close();
+        } catch {
+          // 客户端已断开时 close 会抛错，忽略即可
+        }
+      } finally {
+        // 无论完整传输还是中断，都要清理临时文件
+        rmSync(/*turbopackIgnore: true*/ filepath, { force: true });
+      }
+    })();
+
+    return new NextResponse(readable, {
       headers: {
         "Content-Type": "application/octet-stream",
         "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,

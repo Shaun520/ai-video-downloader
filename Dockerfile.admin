@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+# SaveAny Admin（Next.js 管理后台，不需要 yt-dlp/ffmpeg）
+# 目标平台：腾讯云 CloudBase 云托管（上海地域）
+# 服务配置：请参照 Dockerfile.web 文件头说明，仅把「Dockerfile 名称」换成 Dockerfile.admin
+#
+# 本地验证：docker build -f Dockerfile.admin -t saveany-admin .
+#           docker run --env ADMIN_PASSWORD=xxx -p 3001:3000 saveany-admin
+#
+# ⚠️ NEXT_PUBLIC_*（构建期内联）同样需要在构建阶段通过 ARG 注入，方法同 Dockerfile.web。
+
+FROM node:22-slim AS base
+WORKDIR /app
+
+# ---------- 构建阶段 ----------
+FROM base AS build
+ARG NEXT_PUBLIC_SUPABASE_URL=https://zwadisymylqberhsftmp.supabase.co
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3YWRpc3lteWxxYmVyaHNmdG1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNTUxOTksImV4cCI6MjEwNDkzMTE5OX0.xoaqNp6wBBRsRfmX8qLyVGQMCVP_nfPtYxm9MmgA15k
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3311
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
+    NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
+    NEXT_TELEMETRY_DISABLED=1
+
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json turbo.json ./
+COPY packages ./packages
+COPY apps/admin ./apps/admin
+
+RUN npm install -g pnpm@10
+RUN pnpm install --filter admin... --no-frozen-lockfile
+RUN pnpm exec turbo build --filter=admin
+
+# ---------- 运行阶段 ----------
+FROM base AS runtime
+ENV NODE_ENV=production \
+    PORT=3000 \
+    NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages ./packages
+COPY --from=build /app/apps/admin ./apps/admin
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+
+EXPOSE 3000
+CMD ["sh", "-c", "cd apps/admin && exec node node_modules/next/dist/bin/next start -p $PORT"]

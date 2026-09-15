@@ -12,3 +12,8 @@ apps/web/.next
 apps/admin/.next
 apps/web/node_modules
 apps/admin/node_modules
+# 运行产物与本地缓存（上传代码包时排除，减小体积）
+downloads
+.turbo
+.open-next
+packages/*/dist
