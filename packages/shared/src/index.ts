@@ -114,6 +114,11 @@ export const PLATFORM_NAMES: Record<string, string> = {
   bilibili: "哔哩哔哩",
   douyin: "抖音",
   tiktok: "TikTok",
+  xiaohongshu: "小红书",
+  weibo: "微博",
+  kuaishou: "快手",
+  weixin: "微信视频号",
+  qq: "QQ短视频",
 };
 
 /** LLM 服务通道：DeepSeek 官方 | 阿里云百炼 DashScope */

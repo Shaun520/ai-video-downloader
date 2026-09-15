@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
-import { VideoDownloader, DouyinParser, isDouyinUrl, friendlyYtDlpError } from "@saveany/core";
+import { friendlyRouteError, parseUrl } from "@saveany/core";
 import { CONTAINER_URL, callContainer } from "@/lib/platform-client";
 
 const DOWNLOAD_DIR = path.join(process.cwd(), "downloads");
@@ -15,7 +15,7 @@ function isHttpUrl(u: string): boolean {
   }
 }
 
-/** POST /api/parse — 解析视频信息（yt-dlp 或 抖音专用） */
+/** POST /api/parse — 解析视频信息（抖音专用 / 通用解析框架 / yt-dlp 统一路由） */
 export async function POST(request: Request) {
   let body: { url?: string };
   try {
@@ -30,23 +30,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    // 部署形态：配置了容器则统一转发（容器内部已按平台分流：抖音专用 / yt-dlp）
+    // 部署形态：配置了容器则统一转发（容器内部同样走 router 分流）
     if (CONTAINER_URL) {
       const info = await callContainer<Record<string, unknown>>("/parse", { url: url.trim() });
       return NextResponse.json({ data: info });
     }
 
-    if (isDouyinUrl(url)) {
-      const parser = new DouyinParser(DOWNLOAD_DIR);
-      const info = await parser.parse(url.trim());
-      return NextResponse.json({ data: info });
-    }
-
-    const downloader = new VideoDownloader(DOWNLOAD_DIR);
-    const info = await downloader.parseVideo(url.trim());
+    const info = await parseUrl(url.trim(), DOWNLOAD_DIR);
     return NextResponse.json({ data: info });
   } catch (err) {
-    const message = friendlyYtDlpError(err); // 原始 ERROR 文本对用户不友好，统一转可读提示
+    const message = friendlyRouteError(err); // 原始 ERROR 文本对用户不友好，统一转可读提示
     console.error("parse", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: message }, { status: 500 });
   }

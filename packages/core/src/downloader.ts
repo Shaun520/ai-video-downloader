@@ -116,6 +116,20 @@ export function hasFfmpeg(): boolean {
   return !res.error && res.status === 0;
 }
 
+/**
+ * 聚合页（Vimeo customer 页、部分官网页面等）→ 具体视频 URL 的内存缓存。
+ * parse 阶段解析出后写入，download/direct-url 阶段复用，避免重复完整解析。
+ * 键为用户输入 URL，值为解析后的具体视频页 URL。
+ */
+const AGGREGATE_CACHE = new Map<string, string>();
+
+/** 聚合页里"最佳视频条目"的评分：formats 越多越优先；generic/html5 兜底解析降权 */
+function aggregateScore(e: YtDlpInfo): number {
+  const n = Array.isArray(e.formats) ? e.formats.length : 0;
+  const generic = e.extractor === "generic" || e.extractor === "html5" ? -1 : 0;
+  return n + generic;
+}
+
 export class VideoDownloader {
   readonly downloadDir: string;
   readonly ffmpegAvailable: boolean;
@@ -142,13 +156,29 @@ export class VideoDownloader {
       url,
     ];
     const stdout = await runYtDlp(args);
-    let info: YtDlpInfo;
+    let info: YtDlpInfo & { _type?: string; entries?: YtDlpInfo[] };
     try {
-      info = JSON.parse(stdout) as YtDlpInfo;
+      info = JSON.parse(stdout) as YtDlpInfo & { _type?: string; entries?: YtDlpInfo[] };
     } catch {
       throw new Error("yt-dlp 输出无法解析");
     }
 
+    // 聚合页（Vimeo customer 页等）：--no-playlist 下 yt-dlp 返回懒播放列表（无 formats）。
+    // 完整解析全部条目取"最佳视频"，并把 url 指向该具体视频页，保证后续直链/下载可用。
+    if (info._type === "playlist" && Array.isArray(info.entries)) {
+      const target = await this.resolveAggregate(url);
+      if (target) {
+        AGGREGATE_CACHE.set(url, target.targetUrl);
+        return this.toVideoInfo(target.entry, url, target.targetUrl);
+      }
+      throw new Error("该页面包含多个视频且无法确定目标视频，请直接粘贴视频页链接");
+    }
+
+    return this.toVideoInfo(info, url);
+  }
+
+  /** raw yt-dlp info → VideoInfo；targetUrl 存在时覆盖返回的 url（聚合页场景） */
+  private toVideoInfo(info: YtDlpInfo, sourceUrl: string, targetUrl?: string): VideoInfo {
     const formats = this.extractFormats(info);
     const platform = info.extractor || info.extractor_key || "Unknown";
 
@@ -173,10 +203,43 @@ export class VideoDownloader {
       platform,
       viewCount: info.view_count,
       uploadDate: info.upload_date || "",
-      url,
+      url: targetUrl || sourceUrl,
       formats,
       subtitles: [...subtitles, ...autoSubs],
     };
+  }
+
+  /**
+   * 聚合页解析：完整 dump 全部条目（不带 --no-playlist），
+   * 选出 formats 最多的真实视频条目（generic/html5 兜底解析降权）。
+   * 返回具体视频页 URL（webpage_url）与该条目 raw info；非聚合页返回 null。
+   */
+  async resolveAggregate(url: string): Promise<{ targetUrl: string; entry: YtDlpInfo } | null> {
+    const stdout = await runYtDlp(
+      ["--quiet", "--no-warnings", "--skip-download", "--dump-single-json", url],
+      { timeoutMs: 300_000 }
+    );
+    let j: YtDlpInfo & { _type?: string; entries?: YtDlpInfo[] };
+    try {
+      j = JSON.parse(stdout) as YtDlpInfo & { _type?: string; entries?: YtDlpInfo[] };
+    } catch {
+      return null;
+    }
+    if (j._type !== "playlist" || !Array.isArray(j.entries) || !j.entries.length) return null;
+    if (j.entries.length > 50) return null; // 真实大列表（YouTube 播放列表等）不归并，维持原行为
+
+    const usable = j.entries
+      .filter((e) => Array.isArray(e.formats) && e.formats.length > 0)
+      .sort((a, b) => aggregateScore(b) - aggregateScore(a));
+    const best = usable[0];
+    if (!best) return null;
+
+    const targetUrl =
+      (best as YtDlpInfo & { webpage_url?: string }).webpage_url ||
+      (best as YtDlpInfo & { original_url?: string }).original_url ||
+      best.url ||
+      url;
+    return { targetUrl, entry: best };
   }
 
   /** 从 raw formats 提取整理为前端可用列表 */
@@ -193,7 +256,8 @@ export class VideoDownloader {
       const height = f.height;
       const ext = f.ext || "mp4";
 
-      const hasVideo = vcodec !== "none" && !!vcodec;
+      // 视频流判定：vcodec 缺失时（vqq 等 extractor 不填充编码信息）退化为按分辨率识别
+      const hasVideo = (vcodec !== "none" && !!vcodec) || !!height || !!f.width;
       if (!hasVideo) continue;
 
       const filesize = f.filesize || f.filesize_approx;
@@ -248,6 +312,9 @@ export class VideoDownloader {
     let fmt = isAudio ? "bestaudio/best" : formatId;
     if (!this.ffmpegAvailable && fmt.includes("+")) fmt = "best";
 
+    // 聚合页场景：parse 阶段已解析出具体视频页（见 parseVideo），直接下载该页而非整页
+    const targetUrl = AGGREGATE_CACHE.get(url) || url;
+
     const args = [
       ...this.baseArgs(true),
       "--format", fmt,
@@ -258,7 +325,7 @@ export class VideoDownloader {
         ? ["--extract-audio", "--audio-format", "mp3", "--audio-quality", "0"]
         : []),
       ...(this.ffmpegAvailable && !isAudio ? ["--merge-output-format", "mp4"] : []),
-      url,
+      targetUrl,
     ];
     const stdout = await runYtDlp(args, { timeoutMs: 600_000 });
 
@@ -289,11 +356,22 @@ export class VideoDownloader {
       url,
     ];
     const stdout = await runYtDlp(args);
-    let info: YtDlpInfo;
+    let info: YtDlpInfo & { _type?: string };
     try {
-      info = JSON.parse(stdout) as YtDlpInfo;
+      info = JSON.parse(stdout) as YtDlpInfo & { _type?: string };
     } catch {
       throw new Error("无法解析直链信息");
+    }
+
+    // 聚合页：--no-playlist 下返回懒播放列表 → 解析到具体视频页后重试
+    if (info._type === "playlist") {
+      const cached = AGGREGATE_CACHE.get(url);
+      const target = cached ? { targetUrl: cached } : await this.resolveAggregate(url);
+      if (target) {
+        AGGREGATE_CACHE.set(url, target.targetUrl);
+        return this.getDirectUrl(target.targetUrl, formatId);
+      }
+      throw new Error("该页面包含多个视频且无法确定目标视频，请直接粘贴视频页链接");
     }
 
     let directUrl = info.url || "";
@@ -326,6 +404,7 @@ export type YtDlpErrorKind =
   | "anti_bot" // 平台反爬校验（TikTok 等对数据中心 IP / 无浏览器指纹）
   | "needs_cookie" // 需要登录 Cookie
   | "unsupported" // 不支持该链接/平台
+  | "drm" // 视频受数字版权保护（Vimeo 等品牌视频常见），无法离线下载
   | "missing" // 环境缺少 yt-dlp / ffmpeg
   | "timeout" // 我们自设的超时
   | "unknown";
@@ -336,6 +415,7 @@ export const YTDLP_ERROR_HINTS: Record<YtDlpErrorKind, string> = {
   anti_bot: "该平台风控拦截了本次请求（反爬校验或访问过于频繁）。请稍等 1~2 分钟再试，或更换网络出口节点。",
   needs_cookie: "该视频需要登录平台账号才能解析，当前暂不支持。",
   unsupported: "暂不支持此链接或平台，请确认链接是否来自支持的视频平台。",
+  drm: "该视频受数字版权保护（DRM），无法离线下载。可在原始平台应用内观看。",
   missing: "服务端缺少 yt-dlp / ffmpeg 组件，请检查部署环境。",
   timeout: "解析超时（视频所在平台响应较慢），请稍后重试。",
   unknown: "解析失败，请稍后重试。",
@@ -349,6 +429,7 @@ export function classifyYtDlpError(err: unknown): YtDlpErrorKind {
   if (lower.includes("unsupported url") || lower.includes("no video formats") || lower.includes("is not a valid url")) {
     return "unsupported";
   }
+  if (lower.includes("drm") && (lower.includes("protect") || lower.includes("encrypted") || lower.includes("drm"))) return "drm";
   if (lower.includes("fresh cookies") || lower.includes("needs cookie") || lower.includes("cookie")) return "needs_cookie";
   // 403/429 = 平台风控（TikTok/YouTube 高频访问或地区限制），先于网络类判定
   if (

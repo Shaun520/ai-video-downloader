@@ -1,7 +1,7 @@
 /**
  * 核心容器服务（Cloudflare Containers / Docker 运行）
- * 暴露 /health /parse /direct-url /subtitle 标准 JSON 接口，
- * 复用 @saveany/core（yt-dlp 封装 + 抖音解析 + 字幕提取）。
+ * 暴露 /health /parse /direct-url /download /subtitle 标准 JSON 接口，
+ * 复用 @saveany/core（统一路由：抖音专用 / 通用解析框架 / yt-dlp + 字幕提取）。
  *
  * 无框架依赖，纯 node:http，便于容器化与边缘部署。
  */
@@ -11,12 +11,14 @@ import os from "node:os";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
-  VideoDownloader,
-  DouyinParser,
   SubtitleExtractor,
-  isDouyinUrl,
+  parseUrl,
+  directUrl,
+  downloadUrl,
+  UniversalError,
   classifyYtDlpError,
   YTDLP_ERROR_HINTS,
+  UNIVERSAL_ERROR_HINTS,
   VERSION,
 } from "@saveany/core";
 
@@ -61,11 +63,13 @@ function sendJson(res, status, body) {
 
 /** 统一错误出口：分类 → 中文友好提示 + 结构化 code（unsupported 归 400，其余 502） */
 function sendError(res, err) {
-  const kind = classifyYtDlpError(err);
   const raw = err instanceof Error ? err.message : String(err);
+  const isUniversal = err instanceof UniversalError;
+  const kind = isUniversal ? err.kind : classifyYtDlpError(err);
+  const message = isUniversal ? UNIVERSAL_ERROR_HINTS[err.kind] : YTDLP_ERROR_HINTS[kind];
   console.error(`[saveany-core] ${kind}:`, raw);
   sendJson(res, kind === "unsupported" ? 400 : 502, {
-    error: YTDLP_ERROR_HINTS[kind],
+    error: message,
     code: kind,
     detail: raw,
   });
@@ -89,9 +93,7 @@ const server = http.createServer(async (req, res) => {
       if (!target || typeof target !== "string" || !isHttpUrl(target.trim())) {
         return sendJson(res, 400, { error: "请提供有效的视频链接" });
       }
-      const info = isDouyinUrl(target.trim())
-        ? await new DouyinParser(DOWNLOAD_DIR).parse(target.trim())
-        : await new VideoDownloader(DOWNLOAD_DIR).parseVideo(target.trim());
+      const info = await parseUrl(target.trim(), DOWNLOAD_DIR);
       return sendJson(res, 200, { data: info });
     } catch (err) {
       return sendError(res, err);
@@ -104,7 +106,7 @@ const server = http.createServer(async (req, res) => {
       if (!target || typeof target !== "string" || !isHttpUrl(target.trim())) {
         return sendJson(res, 400, { error: "请提供有效的视频链接" });
       }
-      const result = await new VideoDownloader(DOWNLOAD_DIR).getDirectUrl(target.trim(), format_id || "best");
+      const result = await directUrl(target.trim(), format_id, DOWNLOAD_DIR);
       return sendJson(res, 200, { data: result });
     } catch (err) {
       return sendError(res, err);
@@ -132,12 +134,8 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: "请提供有效的视频链接" });
       }
       const isAudio = audio === true || format_id === "mp3";
-      let result;
-      if (isDouyinUrl(target.trim())) {
-        result = await new DouyinParser(DOWNLOAD_DIR).download(target.trim(), isAudio ? "audio" : "video");
-      } else {
-        result = await new VideoDownloader(DOWNLOAD_DIR).downloadVideo(target.trim(), format_id || "best", { audio: isAudio });
-      }
+      // 统一路由：抖音专用 / 通用解析框架 / yt-dlp
+      const result = await downloadUrl(target.trim(), format_id, { audio: isAudio }, DOWNLOAD_DIR);
       // 流式回传文件（容器有真实文件系统）
       const stat = fs.statSync(result.filepath);
       res.writeHead(200, {

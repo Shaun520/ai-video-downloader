@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { createReadStream, existsSync, rmSync, statSync } from "node:fs";
-import { Readable } from "node:stream";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
-import { VideoDownloader, DouyinParser, isDouyinUrl, friendlyYtDlpError } from "@saveany/core";
+import { downloadUrl, friendlyRouteError } from "@saveany/core";
 import { CONTAINER_URL } from "@/lib/platform-client";
 
 export const maxDuration = 300;
 
-const DOWNLOAD_DIR = path.join(process.cwd(), "downloads");
+const DOWNLOAD_DIR = path.join(
+  process.env.TEMP || "/tmp",
+  "saveany-downloads"
+);
 
 function isHttpUrl(u: string): boolean {
   try {
@@ -35,9 +37,6 @@ export async function POST(request: Request) {
   // 音频模式：format_id 为 "mp3" 或显式 audio=true 时，仅提取音频并转 mp3
   const isAudio = body.audio === true || format_id === "mp3";
 
-  // 幂等去重：以 removePrefix 形式兼容 yt-dlp 重名覆盖
-  const downloader = new VideoDownloader(DOWNLOAD_DIR);
-
   try {
     // 部署形态：配置了容器则转发（容器有真实文件系统；Workers 无本地磁盘）
     if (CONTAINER_URL) {
@@ -57,60 +56,38 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: payload.error || "下载失败" }, { status: up.status });
       }
       const filename = decodeURIComponent(up.headers.get("x-saveany-filename") || "video.mp4");
-      return new NextResponse(up.body, {
+      // 容器返回体整体读入内存再转发，同样规避 Web Stream 收尾崩溃
+      const buf = new Uint8Array(await up.arrayBuffer());
+      return new NextResponse(buf, {
         headers: {
           "Content-Type": "application/octet-stream",
           "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          "Content-Length": String(buf.byteLength),
           "Cache-Control": "no-store",
         },
       });
     }
 
-    let filepath = "";
-    let filename = "";
-    if (isDouyinUrl(url)) {
-      const parser = new DouyinParser(DOWNLOAD_DIR);
-      const result = await parser.download(url.trim(), isAudio ? "audio" : "video");
-      filepath = result.filepath;
-      filename = result.filename;
-    } else {
-      const result = await downloader.downloadVideo(url.trim(), format_id || "best", { audio: isAudio });
-      filepath = result.filepath;
-      filename = result.filename;
-    }
+    // 统一路由：抖音专用 / 通用解析框架 / yt-dlp
+    const result = await downloadUrl(url.trim(), format_id, { audio: isAudio }, DOWNLOAD_DIR);
+    const filepath = result.filepath;
+    const filename = result.filename;
 
     if (!filepath || !existsSync(/*turbopackIgnore: true*/ filepath)) {
       return NextResponse.json({ error: "下载失败：未找到输出文件" }, { status: 500 });
     }
 
     const stat = statSync(/*turbopackIgnore: true*/ filepath);
-    const stream = createReadStream(/*turbopackIgnore: true*/ filepath);
-    const nodeStream = Readable.toWeb(stream) as ReadableStream<Uint8Array>;
-
-    // 手动搬运管道：视频完整传给客户端后（或客户端中途断开）立即删除服务器上的临时文件，
-    // 避免 downloads 目录残留堆积。直接返回 nodeStream 无法挂"发送完成"回调，故自建转发管道。
-    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
-    const reader = nodeStream.getReader();
-    const writer = writable.getWriter();
-    void (async () => {
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          await writer.write(value);
-        }
-        try {
-          await writer.close();
-        } catch {
-          // 客户端已断开时 close 会抛错，忽略即可
-        }
-      } finally {
-        // 无论完整传输还是中断，都要清理临时文件
-        rmSync(/*turbopackIgnore: true*/ filepath, { force: true });
-      }
-    })();
-
-    return new NextResponse(readable, {
+    if (stat.size > 512 * 1024 * 1024) {
+      rmSync(/*turbopackIgnore: true*/ filepath, { force: true });
+      return NextResponse.json({ error: "视频超过 512MB，暂不支持直接下载" }, { status: 413 });
+    }
+    // 一次性读入内存返回（未走流式，规避 Windows 上 Web Stream 响应收尾的崩溃面）；
+    // 拷贝为独立 Uint8Array，避免复用 Buffer 底层 ArrayBuffer 在 undici/Next 层的问题。
+    const buf = readFileSync(/*turbopackIgnore: true*/ filepath);
+    const body = new Uint8Array(buf);
+    rmSync(/*turbopackIgnore: true*/ filepath, { force: true });
+    return new NextResponse(body, {
       headers: {
         "Content-Type": "application/octet-stream",
         "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
@@ -119,7 +96,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (err) {
-    const message = friendlyYtDlpError(err);
+    const message = friendlyRouteError(err);
     console.error("download", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
