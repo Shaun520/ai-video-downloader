@@ -59,3 +59,6 @@ backend/test_*.py
 
 # 截图等非代码文件
 *.png
+
+# 通用解析验证脚本输出
+scripts/.verify/

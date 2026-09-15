@@ -13,6 +13,25 @@ export {
   type YtDlpInfo,
 } from "./downloader.js";
 export { DouyinParser, isDouyinUrl } from "./douyin.js";
+export {
+  UniversalParser,
+  findPlatform,
+  classifyUniversalError,
+  friendlyUniversalError,
+  UNIVERSAL_ERROR_HINTS,
+  UniversalError,
+  type UniversalErrorKind,
+  type PlatformStrategy,
+} from "./universal/index.js";
+export {
+  detectPlatform,
+  parseUrl,
+  directUrl,
+  downloadUrl,
+  friendlyRouteError,
+  type PlatformRoute,
+  type DirectUrlResult,
+} from "./router.js";
 export { transcribeAudioFile, transcribeAzureFile, resolveAzureSpeechConfig, DEFAULT_DASHSCOPE_MODEL } from "./asr.js";
 export {
   SubtitleExtractor,

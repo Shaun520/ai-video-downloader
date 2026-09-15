@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createReadStream, existsSync, rmSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import path from "node:path";
-import { VideoDownloader, DouyinParser, isDouyinUrl, friendlyYtDlpError } from "@saveany/core";
+import { downloadUrl, friendlyRouteError } from "@saveany/core";
 import { CONTAINER_URL } from "@/lib/platform-client";
 
 export const maxDuration = 300;
@@ -35,9 +35,6 @@ export async function POST(request: Request) {
   // 音频模式：format_id 为 "mp3" 或显式 audio=true 时，仅提取音频并转 mp3
   const isAudio = body.audio === true || format_id === "mp3";
 
-  // 幂等去重：以 removePrefix 形式兼容 yt-dlp 重名覆盖
-  const downloader = new VideoDownloader(DOWNLOAD_DIR);
-
   try {
     // 部署形态：配置了容器则转发（容器有真实文件系统；Workers 无本地磁盘）
     if (CONTAINER_URL) {
@@ -66,18 +63,10 @@ export async function POST(request: Request) {
       });
     }
 
-    let filepath = "";
-    let filename = "";
-    if (isDouyinUrl(url)) {
-      const parser = new DouyinParser(DOWNLOAD_DIR);
-      const result = await parser.download(url.trim(), isAudio ? "audio" : "video");
-      filepath = result.filepath;
-      filename = result.filename;
-    } else {
-      const result = await downloader.downloadVideo(url.trim(), format_id || "best", { audio: isAudio });
-      filepath = result.filepath;
-      filename = result.filename;
-    }
+    // 统一路由：抖音专用 / 通用解析框架 / yt-dlp
+    const result = await downloadUrl(url.trim(), format_id, { audio: isAudio }, DOWNLOAD_DIR);
+    const filepath = result.filepath;
+    const filename = result.filename;
 
     if (!filepath || !existsSync(/*turbopackIgnore: true*/ filepath)) {
       return NextResponse.json({ error: "下载失败：未找到输出文件" }, { status: 500 });
@@ -119,7 +108,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (err) {
-    const message = friendlyYtDlpError(err);
+    const message = friendlyRouteError(err);
     console.error("download", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: message }, { status: 500 });
   }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
-import { VideoDownloader, friendlyYtDlpError } from "@saveany/core";
+import { friendlyRouteError, directUrl, type DirectUrlResult } from "@saveany/core";
 import { CONTAINER_URL, callContainer } from "@/lib/platform-client";
 
 const DOWNLOAD_DIR = path.join(process.cwd(), "downloads");
@@ -15,7 +15,7 @@ function isHttpUrl(u: string): boolean {
   }
 }
 
-/** POST /api/direct-url — 获取视频源站直链（带宽友好优先） */
+/** POST /api/direct-url — 获取视频源站直链（带宽友好优先，抖音/通用解析/yt-dlp 统一路由） */
 export async function POST(request: Request) {
   let body: { url?: string; format_id?: string };
   try {
@@ -31,18 +31,17 @@ export async function POST(request: Request) {
 
   try {
     if (CONTAINER_URL) {
-      const result = await callContainer<{ directUrl: string; ext: string; filesize: number | null; title: string }>(
-        "/direct-url",
-        { url: url.trim(), format_id: format_id || "best" }
-      );
+      const result = await callContainer<DirectUrlResult>("/direct-url", {
+        url: url.trim(),
+        format_id: format_id || "best",
+      });
       return NextResponse.json({ data: result });
     }
 
-    const downloader = new VideoDownloader(DOWNLOAD_DIR);
-    const result = await downloader.getDirectUrl(url.trim(), format_id || "best");
+    const result = await directUrl(url.trim(), format_id, DOWNLOAD_DIR);
     return NextResponse.json({ data: result });
   } catch (err) {
-    const message = friendlyYtDlpError(err);
+    const message = friendlyRouteError(err);
     console.error("direct-url", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
