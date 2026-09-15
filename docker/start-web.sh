@@ -56,6 +56,18 @@ if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
       export HTTPS_PROXY="$PROXY_URL"
       export ALL_PROXY="$PROXY_URL"
       echo "[start] PROXY_URL=$PROXY_URL"
+      # 出海自检：确认流量是否真的经出口节点到达公网（非致命，仅诊断）
+      echo "[start] 出海自检开始（最多 ~20s）..."
+      if command -v curl >/dev/null 2>&1; then
+        IP=$(curl -sS -m 12 https://api.ipify.org 2>/dev/null || true)
+        if [ -n "$IP" ]; then
+          echo "[start] ✅ 出海成功，当前公网出口 IP = $IP"
+        else
+          echo "[start] ❌ 出海失败：无法从公网获取 IP（请检查家端 Clash TUN / 节点 / 出口节点批准）"
+        fi
+      else
+        echo "[start] 容器无 curl，跳过出海自检"
+      fi
     else
       echo "[start] 警告：Tailscale 60s 内未上线，继续以直连模式启动（海外平台不可用）。tailscale up 仍在后台重试，报错请看上方日志"
     fi
