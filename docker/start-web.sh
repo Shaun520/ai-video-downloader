@@ -25,8 +25,17 @@ if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
   if [ -z "$READY" ]; then
     echo "[start] 警告：tailscaled 未就绪，跳过 Tailscale，直连模式启动"
   else
+    # 可选：配置出口节点（你家电脑的 Tailscale IP），公网流量经它再出海
+    # 需要满足：① 家电脑开启 exit node;② Clash 开 TUN/系统代理;③ 管理台批准该节点
+    EXIT_ARGS=
+    if [ -n "${TS_EXIT_NODE:-}" ]; then
+      EXIT_ARGS="--exit-node=$TS_EXIT_NODE --exit-node-allow-lan-access"
+      echo "[start] 使用出口节点：$TS_EXIT_NODE（公网流量经你家电脑出海）"
+    fi
+
     # 后台登录 tailnet（ephemeral 节点）；失败不阻塞业务启动，错误会打印到日志便于诊断
-    tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname=saveany-web-cloudrun 2>&1 &
+    # shellcheck disable=SC2086
+    tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname=saveany-web-cloudrun $EXIT_ARGS 2>&1 &
     TAILSCALE_UP_PID=$!
 
     # 等待节点上线拿到 IP，确保代理目标可达后才设置出站代理
