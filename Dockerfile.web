@@ -75,7 +75,8 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
 
 EXPOSE 3000
-# 入口脚本：可选 Tailscale（TAILSCALE_AUTHKEY）出海代理 + Next.js 启动
+# 入口脚本 + SOCKS5 桥接器
 COPY docker/start-web.sh /app/start-web.sh
-RUN chmod +x /app/start-web.sh
+COPY docker/socks-bridge.py /app/socks-bridge.py
+RUN chmod +x /app/start-web.sh /app/socks-bridge.py
 CMD ["/app/start-web.sh"]

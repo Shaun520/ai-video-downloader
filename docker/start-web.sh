@@ -47,20 +47,19 @@ if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
       if [ -n "${UPSTREAM_PROXY_TAILNET:-}" ]; then
         CLASH_HOST="${UPSTREAM_PROXY_TAILNET%%:*}"
         CLASH_PORT="${UPSTREAM_PROXY_TAILNET##*:}"
-        echo "[start] 用 socat 桥接本地 17890 -> Tailscale -> 你家 Clash ${CLASH_HOST}:${CLASH_PORT}"
-        # socat 监听本地 17890，经 Tailscale SOCKS5(127.0.0.1:1055) 转发到你家 Clash
-        socat TCP-LISTEN:17890,fork,reuseaddr \
-          SOCKS5:127.0.0.1:${CLASH_HOST}:${CLASH_PORT},socksport=1055,socks5auth=none &
-        SOCAT_PID=$!
+        echo "[start] 用 socks-bridge 桥接本地 17890 -> Tailscale -> 你家 Clash ${CLASH_HOST}:${CLASH_PORT}"
+        # Python 桥接器：监听本地 17890，经 Tailscale SOCKS5(127.0.0.1:1055) 转发到你家 Clash
+        python3 /app/socks-bridge.py 17890 127.0.0.1 1055 "$CLASH_HOST" "$CLASH_PORT" &
+        BRIDGE_PID=$!
         sleep 1
-        if kill -0 "$SOCAT_PID" 2>/dev/null; then
+        if kill -0 "$BRIDGE_PID" 2>/dev/null; then
           export PROXY_URL="http://127.0.0.1:17890"
           export HTTP_PROXY="$PROXY_URL"
           export HTTPS_PROXY="$PROXY_URL"
           export ALL_PROXY="$PROXY_URL"
           echo "[start] PROXY_URL=$PROXY_URL（经你家 Clash 出海）"
         else
-          echo "[start] ❌ socat 启动失败，回退直连（海外平台不可用）"
+          echo "[start] ❌ socks-bridge 启动失败，回退直连（海外平台不可用）"
         fi
       else
         # 未配置上游代理：仅用 Tailscale SOCKS5（访问 tailnet 内资源；公网直连会被墙）
