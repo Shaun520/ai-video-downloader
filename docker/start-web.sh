@@ -15,35 +15,41 @@ if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
     --outbound-http-proxy-listen=127.0.0.1:1055 &
   TAILSCALED_PID=$!
 
-  # 等待 tailscaled 就绪
+  # 等待 tailscaled 接受本地命令
+  READY=
   for i in $(seq 1 15); do
-    if tailscale version >/dev/null 2>&1; then break; fi
+    if tailscale version >/dev/null 2>&1; then READY=1; break; fi
     sleep 1
   done
 
-  # 登录并加入 tailnet（ephemeral 节点，容器销毁后自动清理）
-  tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname=saveany-web-cloudrun --timeout=30s
-
-  # 等待节点上线拿到 IP，确保代理目标可达后才放行业务流量
-  UP=
-  for i in $(seq 1 30); do
-    if tsip=$(tailscale ip -4 2>/dev/null); then
-      UP=1
-      echo "[start] Tailscale 上线：$tsip"
-      break
-    fi
-    sleep 1
-  done
-
-  if [ -n "$UP" ]; then
-    # yt-dlp 等出站代理走本机 tailscale 提供的 SOCKS5，经家庭 Clash 出海
-    export PROXY_URL="socks5://127.0.0.1:1055"
-    export HTTP_PROXY="$PROXY_URL"
-    export HTTPS_PROXY="$PROXY_URL"
-    export ALL_PROXY="$PROXY_URL"
-    echo "[start] PROXY_URL=$PROXY_URL"
+  if [ -z "$READY" ]; then
+    echo "[start] 警告：tailscaled 未就绪，跳过 Tailscale，直连模式启动"
   else
-    echo "[start] 警告：Tailscale 30s 内未上线，继续以直连模式启动（海外平台将不可用）"
+    # 后台登录 tailnet（ephemeral 节点）；失败不阻塞业务启动，错误会打印到日志便于诊断
+    tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname=saveany-web-cloudrun 2>&1 &
+    TAILSCALE_UP_PID=$!
+
+    # 等待节点上线拿到 IP，确保代理目标可达后才设置出站代理
+    UP=
+    for i in $(seq 1 60); do
+      if tsip=$(tailscale ip -4 2>/dev/null); then
+        UP=1
+        echo "[start] Tailscale 上线：$tsip"
+        break
+      fi
+      sleep 1
+    done
+
+    if [ -n "$UP" ]; then
+      # yt-dlp 等出站代理走本机 tailscale 提供的 SOCKS5，经家庭 Clash 出海
+      export PROXY_URL="socks5://127.0.0.1:1055"
+      export HTTP_PROXY="$PROXY_URL"
+      export HTTPS_PROXY="$PROXY_URL"
+      export ALL_PROXY="$PROXY_URL"
+      echo "[start] PROXY_URL=$PROXY_URL"
+    else
+      echo "[start] 警告：Tailscale 60s 内未上线，继续以直连模式启动（海外平台不可用）。tailscale up 仍在后台重试，报错请看上方日志"
+    fi
   fi
 else
   echo "[start] 未配置 TAILSCALE_AUTHKEY，以直连模式运行"
