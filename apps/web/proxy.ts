@@ -31,21 +31,10 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // 保护 /dashboard 与 /api/vip/*、/api/summarize 等需要登录的接口
-  const protectedRoutes = ["/dashboard"];
-  const needAuth = protectedRoutes.some((p) => pathname.startsWith(p));
-
-  if (needAuth && !user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
-  }
-
-  // 已登录用户访问登录/注册页 → 跳回 dashboard
+  // 已登录用户访问登录/注册页 → 跳回首页
   if (user && (pathname.startsWith("/login") || pathname.startsWith("/register"))) {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = "/";
     return NextResponse.redirect(url);
   }
 
