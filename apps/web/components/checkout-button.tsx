@@ -22,7 +22,7 @@ export function CheckoutButton({ planType }: { planType: "monthly" | "yearly" })
       });
       const json = (await res.json().catch(() => ({}))) as { data?: { checkoutUrl?: string }; error?: string };
       if (res.status === 401) {
-        router.push("/login?next=/dashboard?upgrade=1");
+        router.push("/login");
         return;
       }
       if (!res.ok || !json.data?.checkoutUrl) {

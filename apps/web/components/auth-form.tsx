@@ -1,30 +1,65 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { login, register as registerAction } from "@/lib/auth-actions";
+import {
+  login,
+  completeRegister,
+  sendRegisterCode,
+} from "@/lib/auth-actions";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function AuthFormContent({ mode }: { mode: "login" | "register" }) {
   const params = useSearchParams();
-  const next = params.get("next") ?? "/dashboard";
+  const next = params.get("next") ?? "/";
   const isLogin = mode === "login";
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isPending, startTransition] = useTransition();
 
+  // 注册模式：邮箱状态（发验证码用）+ 60s 倒计时
+  const [email, setEmail] = useState("");
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
+
   function onSubmit(formData: FormData) {
     startTransition(async () => {
       setError("");
       setNotice("");
-      const res = isLogin
-        ? await login(formData)
-        : await registerAction(formData);
+      const res = isLogin ? await login(formData) : await completeRegister(formData);
       if (res?.error) setError(res.error);
       if (res?.success) setNotice(res.success);
     });
   }
+
+  async function handleSendCode() {
+    const clean = email.trim().toLowerCase();
+    if (countdown > 0) return;
+    if (!EMAIL_RE.test(clean)) {
+      setError("请输入正确的邮箱地址");
+      return;
+    }
+    setError("");
+    setNotice("");
+    startTransition(async () => {
+      const res = await sendRegisterCode(clean);
+      if (res?.error) setError(res.error);
+      if (res?.success) {
+        setNotice(res.success);
+        setCountdown(60);
+      }
+    });
+  }
+
+  const sendDisabled = countdown > 0 || isPending;
 
   return (
     <div className="w-full max-w-md">
@@ -52,10 +87,44 @@ function AuthFormContent({ mode }: { mode: "login" | "register" }) {
             type="email"
             autoComplete="email"
             required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
             className="w-full rounded-lg border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-100"
           />
         </div>
+
+        {!isLogin && (
+          <div>
+            <label htmlFor="code" className="mb-1.5 block text-sm font-medium text-zinc-700">
+              邮箱验证码
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="code"
+                name="code"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                placeholder="8 位验证码"
+                className="h-11 flex-1 rounded-lg border border-zinc-200 bg-white px-3.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-100"
+              />
+              <button
+                type="button"
+                onClick={handleSendCode}
+                disabled={sendDisabled}
+                className="h-11 shrink-0 rounded-lg bg-zinc-100 px-3.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {countdown > 0 ? `${countdown}s 后重发` : "获取验证码"}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-zinc-400">
+              验证码 5 分钟内有效；若未收到请检查垃圾箱
+            </p>
+          </div>
+        )}
+
         <div>
           <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-zinc-700">
             密码
@@ -71,6 +140,24 @@ function AuthFormContent({ mode }: { mode: "login" | "register" }) {
             className="w-full rounded-lg border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-100"
           />
         </div>
+
+        {!isLogin && (
+          <div>
+            <label htmlFor="confirmPassword" className="mb-1.5 block text-sm font-medium text-zinc-700">
+              确认密码
+            </label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={6}
+              placeholder="再次输入密码"
+              className="w-full rounded-lg border border-zinc-200 bg-white px-3.5 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-100"
+            />
+          </div>
+        )}
 
         {error && (
           <p className="rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-600">

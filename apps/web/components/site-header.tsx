@@ -24,7 +24,7 @@ export function SiteHeader({ userEmail, isVip }: SiteHeaderProps) {
           {userEmail ? (
             <>
               <Link
-                href="/dashboard"
+                href="/"
                 className="text-sm font-medium text-text-secondary transition-colors hover:text-text-primary"
               >
                 {isVip ? (
