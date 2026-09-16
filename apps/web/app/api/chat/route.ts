@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       try {
         const settings = await getAiSettings();
         const extractor = buildExtractor(settings);
-        send("status", { message: "正在提取视频字幕…" });
+        send("status", { message: "正在分析视频内容…（首次问答需先转写语音字幕，请稍候，之后会快很多）" });
         const sub = await extractSubtitleWithCache(extractor, url.trim());
         if (!sub.hasSubtitle || !sub.segments.length) {
           const reason = sub.error || "视频可能没有语音（纯音乐/无人声），或平台未提供字幕且语音转写不可用。";

@@ -45,6 +45,7 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
   const [chatHistory, setChatHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   const [question, setQuestion] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatStatus, setChatStatus] = useState("");
   const [error, setError] = useState("");
 
   const busyRef = useRef(false);
@@ -157,6 +158,7 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
       const q = question.trim();
       if (!q || chatLoading) return;
       setChatLoading(true);
+      setChatStatus("正在连接…");
       setError("");
       setChatHistory((h) => [...h, { role: "user", content: q }]);
       setQuestion("");
@@ -166,6 +168,12 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
         "/api/chat",
         { url, question: q },
         {
+          status: (data) => {
+            try {
+              const d = JSON.parse(data) as { message?: string };
+              if (d.message) setChatStatus(d.message);
+            } catch {}
+          },
           text: (data) => {
             try {
               const d = JSON.parse(data) as { content?: string };
@@ -200,6 +208,7 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
         }
       );
       setChatLoading(false);
+      setChatStatus("");
     },
     [question, chatLoading, url, needLogin]
   );
@@ -476,11 +485,23 @@ export function SummaryPanel({ url, videoTitle, triggerKey, needLogin }: Summary
                   >
                     {msg.role === "assistant" ? (
                       <>
-                        <div
-                          className="chat-prose"
-                          dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(msg.content) }}
-                        />
-                        {chatLoading && idx === chatHistory.length - 1 && (
+                        {!msg.content && chatLoading && idx === chatHistory.length - 1 ? (
+                          /* 正在回复占位：三点动画 + 当前阶段文案 */
+                          <p className="flex items-center gap-2 text-text-muted">
+                            <span className="flex gap-1" aria-hidden>
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/50 [animation-delay:0ms]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/50 [animation-delay:150ms]" />
+                              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-primary/50 [animation-delay:300ms]" />
+                            </span>
+                            <span className="text-xs">{chatStatus}</span>
+                          </p>
+                        ) : (
+                          <div
+                            className="chat-prose"
+                            dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(msg.content) }}
+                          />
+                        )}
+                        {msg.content && chatLoading && idx === chatHistory.length - 1 && (
                           <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-primary/60 align-text-bottom" />
                         )}
                       </>
