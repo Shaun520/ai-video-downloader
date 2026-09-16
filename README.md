@@ -94,10 +94,6 @@ node apps/container/server.mjs      # 核心容器服务 → http://localhost:87
 - **核心容器服务**：参考 `apps/container/Dockerfile` 构建镜像（已内置 yt-dlp + ffmpeg），发布到 Cloudflare Containers，供 /parse、/direct-url、/subtitle 调用
 - **Stripe**：在 Stripe 后台配置 Webhook，指向 `{站点}/api/stripe/webhook`，订阅 `checkout.session.completed` 等事件以自动开通 VIP
 
-## 致谢
-
-本项目在功能与结构上参考了开源项目 [liyupi/free-video-downloader](https://github.com/liyupi/free-video-downloader)（MIT License），后端核心解析与前端交互均在此基础上重写与扩展。感谢原作者 [程序员鱼皮](https://yuyuanweb.feishu.cn) 的开源分享。
-
 ## License
 
 MIT License

@@ -66,7 +66,7 @@ body {
   height: 100%;
 }
 
-/* 总结摘要 Markdown 排版（与原版 free-video-downloader 保持一致） */
+/* 总结摘要 Markdown 排版 */
 .summary-prose {
   max-width: none;
   font-size: 0.875rem;
@@ -182,7 +182,7 @@ body {
   border-bottom: 1px solid var(--color-border-light);
 }
 
-/* AI 问答 Markdown 排版（更紧凑，与原版 free-video-downloader 保持一致） */
+/* AI 问答 Markdown 排版（更紧凑） */
 .chat-prose p {
   margin-bottom: 0.5rem;
   line-height: 1.7;
