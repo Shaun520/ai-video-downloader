@@ -13,6 +13,13 @@ export {
 } from "./downloader.js";
 export { DouyinParser, isDouyinUrl } from "./douyin.js";
 export {
+  BilibiliParser,
+  isBiliVideoUrl,
+  BilibiliError,
+  BILIBILI_ERROR_HINTS,
+  type BilibiliErrorKind,
+} from "./bilibili.js";
+export {
   isDomesticUrl,
   isDomesticHost,
   resolveOutboundProxy,
