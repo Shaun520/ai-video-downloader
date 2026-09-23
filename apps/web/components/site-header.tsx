@@ -16,7 +16,7 @@ export function SiteHeader({ userEmail, isVip }: SiteHeaderProps) {
         <nav className="hidden items-center gap-8 text-sm text-text-secondary md:flex" aria-label="主导航">
           <a href="#features" className="transition-colors hover:text-text-primary">功能</a>
           <a href="#how" className="transition-colors hover:text-text-primary">使用教程</a>
-          <a href="#pricing" className="transition-colors hover:text-text-primary">定价</a>
+          {/* <a href="#pricing" className="transition-colors hover:text-text-primary">定价</a> */}
           <a href="#platforms" className="transition-colors hover:text-text-primary">支持平台</a>
         </nav>
 

@@ -15,12 +15,15 @@ export function SiteFooter() {
           <nav className="flex gap-6 text-sm text-text-secondary" aria-label="页脚导航">
             <a href="#features" className="transition-colors hover:text-text-primary">功能</a>
             <a href="#how" className="transition-colors hover:text-text-primary">使用教程</a>
-            <a href="#pricing" className="transition-colors hover:text-text-primary">定价</a>
+            {/* <a href="#pricing" className="transition-colors hover:text-text-primary">定价</a> */}
             <Link href="/login" className="transition-colors hover:text-text-primary">登录</Link>
           </nav>
         </div>
-        <div className="mt-8 border-t border-border-light pt-6 text-xs text-text-muted">
-          © {new Date().getFullYear()} AI 视频下载器。仅供合法用途，请尊重各平台版权与创作者权益。
+        <div className="mt-8 flex flex-col items-start gap-1 border-t border-border-light pt-6 text-xs text-text-muted">
+          <p>© {new Date().getFullYear()} AI 视频下载器。仅供合法用途，请尊重各平台版权与创作者权益。</p>
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-text-primary">
+            湘ICP备2024096812号-3
+          </a>
         </div>
       </div>
     </footer>

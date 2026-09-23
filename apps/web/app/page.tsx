@@ -3,7 +3,7 @@ import { SiteHeader } from "@/components/site-header";
 import { HomeWorkspace } from "@/components/home-workspace";
 import { FeatureSection } from "@/components/feature-section";
 import { HowToSection } from "@/components/how-to-section";
-import { PricingSection } from "@/components/pricing-section";
+// import { PricingSection } from "@/components/pricing-section";
 import { PlatformSection } from "@/components/platform-section";
 import { SiteFooter } from "@/components/site-footer";
 
@@ -20,7 +20,7 @@ export default async function HomePage() {
         <HomeWorkspace />
         <FeatureSection />
         <HowToSection />
-        <PricingSection />
+        {/* <PricingSection /> */}
         <PlatformSection />
       </main>
       <SiteFooter />
