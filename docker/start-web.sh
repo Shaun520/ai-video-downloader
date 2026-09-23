@@ -53,26 +53,22 @@ if [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
         BRIDGE_PID=$!
         sleep 1
         if kill -0 "$BRIDGE_PID" 2>/dev/null; then
+          # 分流：国内站点直连，仅海外站点经桥（PROXY_URL 是自定义变量，
+          # yt-dlp/undici 不读它；不导出 HTTP(S)_PROXY，避免把国内流量也拖进桥）。
           export PROXY_URL="http://127.0.0.1:17890"
-          export HTTP_PROXY="$PROXY_URL"
-          export HTTPS_PROXY="$PROXY_URL"
-          export ALL_PROXY="$PROXY_URL"
-          echo "[start] PROXY_URL=$PROXY_URL（经你家 Clash 出海）"
+          echo "[start] PROXY_URL=$PROXY_URL（国内直连、仅海外走桥出海）"
         else
           echo "[start] ❌ socks-bridge 启动失败，回退直连（海外平台不可用）"
         fi
       else
         # 未配置上游代理：仅用 Tailscale SOCKS5（访问 tailnet 内资源；公网直连会被墙）
         export PROXY_URL="socks5://127.0.0.1:1055"
-        export HTTP_PROXY="$PROXY_URL"
-        export HTTPS_PROXY="$PROXY_URL"
-        export ALL_PROXY="$PROXY_URL"
-        echo "[start] PROXY_URL=$PROXY_URL（未配置 UPSTREAM_PROXY_TAILNET，公网流量走容器直连）"
+        echo "[start] PROXY_URL=$PROXY_URL（未配置 UPSTREAM_PROXY_TAILNET，海外走 tailscale SOCKS5、国内直连）"
       fi
-      # 出海自检：确认流量是否真的经你家 Clash 到达公网（非致命，仅诊断）
+      # 出海自检：确认流量是否真的经家里 Clash 到达公网（非致命，仅诊断）
       echo "[start] 出海自检开始（最多 ~15s）..."
       if command -v curl >/dev/null 2>&1; then
-        IP=$(curl -sS -m 12 https://api.ipify.org 2>/dev/null || true)
+        IP=$(curl -sS --proxy "$PROXY_URL" -m 12 https://api.ipify.org 2>/dev/null || true)
         if [ -n "$IP" ]; then
           echo "[start] ✅ 出海成功，当前公网出口 IP = $IP"
         else

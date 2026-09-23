@@ -6,13 +6,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { VideoFormat, VideoInfo } from "@saveany/shared";
+import { resolveProxyForUrl } from "./proxy.js";
+export { resolveOutboundProxy } from "./proxy.js";
 import { formatFilesize, sanitizeFilename, sleep } from "./utils.js";
-
-/** 解析出站代理：显式 PROXY_URL 优先，其次 HTTPS_PROXY / HTTP_PROXY 环境变量 */
-export function resolveOutboundProxy(): string | undefined {
-  const p = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-  return p && p.trim() ? p.trim() : undefined;
-}
 
 /** yt-dlp 原始 info 中的 format */
 interface RawFormat {
@@ -84,9 +80,18 @@ function isRetryableYtDlpError(err: Error): boolean {
   return false;
 }
 
+/** 从 yt-dlp 参数中提取目标 URL（parse/download/direct 调用均以 URL 作为最后参数） */
+function targetUrlFromArgs(args: string[]): string {
+  for (let i = args.length - 1; i >= 0; i--) {
+    if (/^https?:\/\//i.test(args[i])) return args[i];
+  }
+  return "";
+}
+
 function spawnYtDlpOnce(args: string[], opts: { timeoutMs?: number }): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proxy = resolveOutboundProxy();
+    // 国内站点直连、仅海外站点走代理（判定见 proxy.ts）
+    const proxy = resolveProxyForUrl(targetUrlFromArgs(args));
     const fullArgs = proxy ? ["--proxy", proxy, ...args] : args;
     const child = spawn("yt-dlp", fullArgs, { windowsHide: true });
     let stdout = "";
