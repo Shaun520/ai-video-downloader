@@ -6,7 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { VideoFormat, VideoInfo } from "@saveany/shared";
-import { resolveProxyForUrl, expandDomesticShortUrl } from "./proxy.js";
+import { resolveProxyForUrl, expandDomesticShortUrl, isBilibiliUrl } from "./proxy.js";
 export { resolveOutboundProxy } from "./proxy.js";
 import { formatFilesize, sanitizeFilename, sleep } from "./utils.js";
 
@@ -99,9 +99,14 @@ function targetUrlFromArgs(args: string[]): string {
 
 function spawnYtDlpOnce(args: string[], opts: { timeoutMs?: number }): Promise<string> {
   return new Promise((resolve, reject) => {
+    const targetUrl = targetUrlFromArgs(args);
     // 国内站点直连、仅海外站点走代理（判定见 proxy.ts）
-    const proxy = resolveProxyForUrl(targetUrlFromArgs(args));
+    const proxy = resolveProxyForUrl(targetUrl);
     const fullArgs = proxy ? ["--proxy", proxy, ...args] : args;
+    // B 站在 CloudBase 数据中心 IP 直连被 WAF 412：环境变量 BILIBILI_IMPERSONATE=1 时给 B 站调用
+    // 追加 --impersonate chrome（curl_cffi 伪装 Chrome TLS 指纹），尝试绕过；本地默认关闭不影响现状。
+    const impersonate = /^(1|true|yes)$/i.test(process.env.BILIBILI_IMPERSONATE ?? "");
+    if (impersonate && isBilibiliUrl(targetUrl)) fullArgs.unshift("--impersonate", "chrome");
     const child = spawn("yt-dlp", fullArgs, { windowsHide: true });
     let stdout = "";
     let stderr = "";
