@@ -72,3 +72,53 @@ export function resolveProxyForUrl(url: string): string | undefined {
   if (isDomesticUrl(url)) return undefined;
   return resolveOutboundProxy();
 }
+
+/** 常见浏览器 UA（短链展开 / 302 跟随时的请求头） */
+const EXPAND_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+
+/**
+ * b23.tv 短链预展开：跟随 302 得到完整 bilibili.com/video/BV... 链接。
+ * 原因：yt-dlp 对 b23.tv 走 [generic] 通用提取器，抓 B 站页易被反爬 412/超时；
+ * 展开成 bilibili.com 完整链接后走 [BiliBili] 专用提取器，解析稳定。
+ * 展开失败（网络不可达等）时原样返回，交给 yt-dlp 兜底，不改变现有行为。
+ */
+export async function expandDomesticShortUrl(url: string): Promise<string> {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return url;
+  }
+  // 仅处理 B 站短链；其余短链（v.douyin.com 等）由对应提取器自行跟进
+  if (host !== "b23.tv" && !host.endsWith(".b23.tv")) return url;
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10_000);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        redirect: "follow",
+        signal: ctrl.signal,
+        headers: { "User-Agent": EXPAND_UA },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    let finalUrl = res.url || url;
+    try {
+      finalUrl = finalUrl.replace(/^http:/i, "https:");
+      if (new URL(finalUrl).hostname.endsWith("bilibili.com")) {
+        const u = new URL(finalUrl);
+        u.search = ""; // 去掉分享埋点参数，保持干净
+        return u.href;
+      }
+    } catch {
+      /* 最终地址非法则回退原链接 */
+    }
+  } catch {
+    /* 短链展开失败：回退原链接，交 yt-dlp 兜底 */
+  }
+  return url;
+}
