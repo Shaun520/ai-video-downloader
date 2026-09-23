@@ -6,7 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { VideoFormat, VideoInfo } from "@saveany/shared";
-import { resolveProxyForUrl } from "./proxy.js";
+import { resolveProxyForUrl, expandDomesticShortUrl } from "./proxy.js";
 export { resolveOutboundProxy } from "./proxy.js";
 import { formatFilesize, sanitizeFilename, sleep } from "./utils.js";
 
@@ -56,6 +56,15 @@ export async function runYtDlp(
 ): Promise<string> {
   const retries = opts.retries ?? 1;
   let lastErr: Error = new Error("yt-dlp 执行失败");
+
+  // b23.tv 等短链先展开为完整链接（见 proxy.ts），确保走专用提取器、代理判定基于展开后 URL
+  const rawUrl = targetUrlFromArgs(args);
+  if (rawUrl) {
+    const expanded = await expandDomesticShortUrl(rawUrl);
+    if (expanded !== rawUrl) {
+      args = args.map((a) => (a === rawUrl ? expanded : a));
+    }
+  }
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (attempt > 0) await sleep(3000 * attempt); // 3s / 6s 退避
