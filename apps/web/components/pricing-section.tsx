@@ -1,3 +1,5 @@
+/* 定价板块（暂时停用，整块注释保留）
+
 import Link from "next/link";
 import { CheckIcon } from "./icons";
 import { CheckoutButton } from "./checkout-button";
@@ -116,3 +118,5 @@ export function PricingSection() {
     </section>
   );
 }
+
+*/
