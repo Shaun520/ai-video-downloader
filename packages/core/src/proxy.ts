@@ -65,6 +65,22 @@ export function resolveOutboundProxy(): string | undefined {
   return p && p.trim() ? p.trim() : undefined;
 }
 
+/** B 站域名判定（含 b23.tv 短链域），用于是否启用 impersonate 等 B 站专用伪装 */
+export function isBilibiliUrl(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return (
+    host === "bilibili.com" ||
+    host.endsWith(".bilibili.com") ||
+    host === "b23.tv" ||
+    host.endsWith(".b23.tv")
+  );
+}
+
 /**
  * 按目标 URL 分流：国内 → undefined（直连，不传 --proxy）；海外 → 出站代理。
  */
