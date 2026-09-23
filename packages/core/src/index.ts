@@ -5,7 +5,6 @@ export {
   VideoDownloader,
   runYtDlp,
   hasFfmpeg,
-  resolveOutboundProxy,
   classifyYtDlpError,
   friendlyYtDlpError,
   YTDLP_ERROR_HINTS,
@@ -13,6 +12,13 @@ export {
   type YtDlpInfo,
 } from "./downloader.js";
 export { DouyinParser, isDouyinUrl } from "./douyin.js";
+export {
+  isDomesticUrl,
+  isDomesticHost,
+  resolveOutboundProxy,
+  resolveProxyForUrl,
+  DOMESTIC_HOST_SUFFIXES,
+} from "./proxy.js";
 export {
   UniversalParser,
   findPlatform,

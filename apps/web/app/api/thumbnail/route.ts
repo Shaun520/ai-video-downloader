@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server";
-
-/** 解析出站代理：显式 PROXY_URL 优先，其次 HTTPS_PROXY / HTTP_PROXY 环境变量 */
-function resolveOutboundProxy(): string | undefined {
-  const p = process.env.PROXY_URL || process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-  return p && p.trim() ? p.trim() : undefined;
-}
+import { resolveProxyForUrl } from "@saveany/core";
 
 /** 按目标域生成防盗链 Referer */
 function refererFor(url: string): string {
@@ -34,9 +29,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 本机/容器 Node 环境：配置了代理则经代理拉取（与 yt-dlp 共用 PROXY_URL）。
+    // 本机/容器 Node 环境：海外 CDN 图经代理拉取（国内 CDN 直连，与 yt-dlp 判定一致，见 core/proxy.ts）。
     // Cloudflare Worker 环境：默认无代理配置，走 Cloudflare 全球网络，无需代理。
-    const proxy = resolveOutboundProxy();
+    const proxy = resolveProxyForUrl(url);
     const base: RequestInit = {
       headers: {
         "User-Agent":
