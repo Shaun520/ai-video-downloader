@@ -2,9 +2,20 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import type { VideoInfo } from "@saveany/shared";
 import { ParseBox, VideoResultCard, directUrlApi } from "./parse-box";
-import { SummaryPanel } from "./summary-panel";
+
+/** AI 面板依赖 markmap/d3 等重型库，首屏不加载，仅在用户点击「AI 总结」后按需拉取 */
+const SummaryPanel = dynamic(
+  () => import("./summary-panel").then((m) => m.SummaryPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="result-slot rounded-2xl border border-border bg-white" />
+    ),
+  }
+);
 
 /** 以 blob 方式强制保存文件（跨域直链的 download 属性会被浏览器忽略，blob URL 则始终生效）；
  *  返回 false 表示直链不可用（CORS 受限/网络失败），由调用方回退到服务端下载。 */

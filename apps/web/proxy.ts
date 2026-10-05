@@ -42,8 +42,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // 排除静态资源，避免匹配 _next 内部请求
+  // 排除静态资源与爬虫文件，避免匹配 _next 内部请求与爬虫抓取时的鉴权开销
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots\\.txt|sitemap\\.xml|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

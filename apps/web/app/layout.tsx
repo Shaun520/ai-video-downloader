@@ -1,11 +1,66 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
+
+const OG_IMAGE = "/og.jpg";
+const OG_IMAGE_SIZE = { width: 2654, height: 1390 };
+const HOME_TITLE = "AI 视频下载器 - 多平台视频解析下载与 AI 总结";
 
 export const metadata: Metadata = {
-  title: "AI 视频下载器 - 多平台视频解析下载与 AI 总结",
-  description:
-    "粘贴链接即可解析下载国内外主流平台视频；AI 一键生成内容总结、思维导图与字幕，无需安装任何软件。",
-  keywords: ["视频下载", "视频解析", "AI 总结", "B站下载", "YouTube下载", "抖音去水印"],
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: HOME_TITLE,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  keywords: [
+    "视频下载",
+    "视频解析",
+    "视频下载器",
+    "AI 总结",
+    "B站下载",
+    "哔哩哔哩下载",
+    "YouTube下载",
+    "抖音去水印",
+    "在线视频下载",
+  ],
+  applicationName: SITE_NAME,
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  category: "technology",
+  alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    locale: "zh_CN",
+    url: "/",
+    siteName: SITE_NAME,
+    title: HOME_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [{ url: OG_IMAGE, ...OG_IMAGE_SIZE, alt: SITE_NAME }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: HOME_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
+  },
+  formatDetection: { telephone: false, email: false, address: false },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2563eb", // 品牌主色，见 app/globals.css
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
