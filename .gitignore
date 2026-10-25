@@ -59,6 +59,8 @@ backend/test_*.py
 
 # 截图等非代码文件
 *.png
+# README 文档配图需要入库
+!docs/images/*.png
 
 # 通用解析验证脚本输出
 scripts/.verify/

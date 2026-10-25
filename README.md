@@ -21,6 +21,14 @@
 - **管理后台**：用户管理（调整 VIP）、订单管理、数据统计
 - **部署友好**：Web/Admin 可部署到 Cloudflare Pages，核心服务可打包 Docker 部署到 Cloudflare Containers
 
+## 界面预览
+
+| AI 总结摘要 | 字幕文本与导出 |
+|:---:|:---:|
+| <img src="docs/images/ai-summary.png" width="460" alt="AI 总结摘要" /> | <img src="docs/images/subtitle.png" width="460" alt="字幕文本与导出" /> |
+| **思维导图** | **AI 视频问答** |
+| <img src="docs/images/mindmap.png" width="460" alt="思维导图" /> | <img src="docs/images/ai-qa.png" width="460" alt="AI 视频问答" /> |
+
 ## 技术栈
 
 | 层 | 技术 |
